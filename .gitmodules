@@ -1,0 +1,15 @@
+[submodule "sdk/DirectXTex"]
+	path = sdk/DirectXTex
+	url = https://github.com/microsoft/DirectXTex.git
+[submodule "sdk/glm"]
+	path = sdk/glm
+	url = https://github.com/g-truc/glm.git
+[submodule "sdk/minhook"]
+	path = sdk/minhook
+	url = https://github.com/TsudaKageyu/minhook.git
+[submodule "sdk/png"]
+	path = sdk/png
+	url = https://github.com/pnggroup/libpng
+[submodule "sdk/zlib"]
+	path = sdk/zlib
+	url = https://github.com/madler/zlib

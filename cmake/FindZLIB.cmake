@@ -1,0 +1,12 @@
+if (NOT TARGET ZLIB::ZLIB)
+    add_library(ZLIB::ZLIB INTERFACE IMPORTED)
+
+    set(ZLIB_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/sdk/zlib;${CMAKE_BINARY_DIR}/sdk/zlib")
+    SET(ZLIB_LIBRARIES "zlibstatic")
+
+    set_target_properties(ZLIB::ZLIB PROPERTIES
+        INTERFACE_LINK_LIBRARIES zlibstatic
+        INTERFACE_INCLUDE_DIRECTORIES "${ZLIB_INCLUDE_DIRS}")
+    
+    set(ZLIB_FOUND TRUE)
+endif()
