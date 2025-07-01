@@ -4,9 +4,9 @@
 #include <concepts>
 
 extern uintptr_t gMemoryBase;
-const uintptr_t gExecutableBase = 0x00400000;
+const uintptr_t kExecutableBase = 0x00400000;
 
-#define ASLR(address) (SlPreInitGlobals::kMemoryBase + (uintptr_t)address - gExecutableBase)
+#define ASLR(address) (SlPreInitGlobals::kMemoryBase + (uintptr_t)address - kExecutableBase)
 
 #define INLINE_ALWAYS __forceinline
 

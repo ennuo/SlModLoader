@@ -69,13 +69,13 @@ void PatchWeaponSetupManager()
     PatchExecutableSection((void*)(gMemoryBase + 0x44FDB0), &num_states, sizeof(uint8_t));
 
     uint8_t analog_state_index = 0;
-    PatchExecutableSection((void*)(gMemoryBase - gExecutableBase + 0x88d157), &analog_state_index, sizeof(uint8_t));
-    PatchExecutableSection((void*)(gMemoryBase - gExecutableBase + 0x88d198), &analog_state_index, sizeof(uint8_t));
-    PatchExecutableSection((void*)(gMemoryBase - gExecutableBase + 0x88d1df), &analog_state_index, sizeof(uint8_t));
-    PatchExecutableSection((void*)(gMemoryBase - gExecutableBase + 0x88d1f8), &analog_state_index, sizeof(uint8_t));
-    PatchExecutableSection((void*)(gMemoryBase - gExecutableBase + 0x88d286), &analog_state_index, sizeof(uint8_t));
+    PatchExecutableSection((void*)(gMemoryBase - kExecutableBase + 0x88d157), &analog_state_index, sizeof(uint8_t));
+    PatchExecutableSection((void*)(gMemoryBase - kExecutableBase + 0x88d198), &analog_state_index, sizeof(uint8_t));
+    PatchExecutableSection((void*)(gMemoryBase - kExecutableBase + 0x88d1df), &analog_state_index, sizeof(uint8_t));
+    PatchExecutableSection((void*)(gMemoryBase - kExecutableBase + 0x88d1f8), &analog_state_index, sizeof(uint8_t));
+    PatchExecutableSection((void*)(gMemoryBase - kExecutableBase + 0x88d286), &analog_state_index, sizeof(uint8_t));
 
-    PatchExecutableSection((void*)(gMemoryBase - gExecutableBase + 0x88d286), &analog_state_index, sizeof(uint8_t));
+    PatchExecutableSection((void*)(gMemoryBase - kExecutableBase + 0x88d286), &analog_state_index, sizeof(uint8_t));
 
 
     // uint8_t shellcode[2] = { 0xeb, 0x0f };
@@ -280,7 +280,7 @@ void InitHooks()
     // CREATE_HOOK(0x448B90, OnSetUpGrid, &cCharacterSelectMulti_SetUpGrid);
     CREATE_HOOK(0x96700, OnGetObjectDef, nullptr);
     CREATE_MEMBER_HOOK(0x2828B0, FrontEndManager::AddFrontEndResources, nullptr);
-    // CREATE_HOOK((0x00722cc0 - gExecutableBase), NullFn, nullptr);
+    // CREATE_HOOK((0x00722cc0 - kExecutableBase), NullFn, nullptr);
     // CREATE_HOOK(0x2AAE40, OnRaceHandlerUpdate, &RaceHandler_Update);
     // CREATE_HOOK(0x48CFA0, OnFreeCameraUpdate, &FreeCamera_OnUpdate);
 
