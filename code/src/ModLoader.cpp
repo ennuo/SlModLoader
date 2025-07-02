@@ -515,7 +515,7 @@ void BuildSpriteAtlas(const std::vector<SlTextureEntry>& sprites, std::filesyste
 void BuildSumoToolCache(const std::string& name, const std::filesystem::path& metadir, const std::filesystem::path& cachedir, const std::string& version, eModType type)
 {
     if (!std::filesystem::exists(cachedir))
-        std::filesystem::create_directory(cachedir);
+        std::filesystem::create_directories(cachedir);
 
     if (!WantRebuildSumoToolCache(cachedir, version)) return;
     LOG(" - Rebuilding Sumo Tool Cache");
@@ -553,7 +553,6 @@ void InstallMod(const std::filesystem::path& moddir)
     auto config_path = moddir / "config.toml";
     auto meta_path = moddir / "meta";
     auto sound_path = moddir / "sounds";
-    auto cache_path = moddir / ".sumotool_build";
 
     toml::table config;
     try { config = toml::parse_file(config_path.string()); }
@@ -568,6 +567,9 @@ void InstallMod(const std::filesystem::path& moddir)
     std::string version = config["version"].value_or("1.0.0");
     std::string name = config["name"].value_or(moddir.filename().string().c_str());
     LOG("%s", name.c_str());
+
+    auto cache_path = std::filesystem::relative("data/modcache") / name; 
+
 
     if (toml::array* arr = config["dll"].as_array())
     for (auto& elem : *arr)
@@ -610,8 +612,8 @@ void InstallMod(const std::filesystem::path& moddir)
         racer->BaseId = config["racer"]["echo"].value_or("amd");
         racer->InternalId = config["racer"]["id"].value_or("sonic");
         racer->DisplayName = config["racer"]["name"].value_or("Unnamed Racer");
-        racer->FrontendResources = SlStringT<char>((name + "/.sumotool_build/frontend").c_str());
-        racer->GameResources = SlStringT<char>((name + "/.sumotool_build/race").c_str());
+        racer->FrontendResources = SlStringT<char>(("modcache\\" + name + "\\frontend").c_str());
+        racer->GameResources = SlStringT<char>(("modcache\\" + name + "\\race").c_str());
 
         gSlMod->Racers.push_back(racer);
 
