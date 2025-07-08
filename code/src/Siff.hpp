@@ -67,12 +67,10 @@ namespace Siff
         unsigned int SheetList;
     };
 
-    #pragma pack(push, 1)
     struct Relocation {
-        unsigned short Flags;
+        unsigned int Flags; // Technically a short, but it doesn't really matter
         unsigned int Offset;
     };
-    #pragma pack(pop)
 };
 
 namespace Siff::Object
@@ -107,4 +105,62 @@ private:
     Siff::Object::TableEntry* GetObjectDef_Linear(unsigned int hash);
 public:
     SumoList<Siff::Object::Header> m_objectDefBlockList;
+};
+
+class SiffTextManager {
+    void* m_pStart;
+    void* m_pEnd;
+};
+
+class KeyFrameManager {
+    void* m_pStart;
+    void* m_pEnd;
+};
+
+class CustomTextureManager {
+public:
+    virtual ~CustomTextureManager();
+    virtual void RegisterTexturePack();
+    virtual void UnregisterTexturePack();
+    virtual void SetTexture();
+    virtual void GetTexture();
+    virtual void GetTexture1();
+    virtual void UnregisterTextureData();
+    virtual void RegisterTextureData();
+private:
+    void* em_texture_manager;
+};
+
+class SiffLoadSet {
+public:
+    DEFINE_MEMBER_FN_0(__ctor, SiffLoadSet*, 0x004ef600);
+    inline SiffLoadSet() { __ctor(); }
+private:
+    bool m_is_loaded;
+    bool m_is_linked;
+	unsigned char* p_common_dat_file;
+	int common_dat_file_size;
+	unsigned int common_dat_file_id;
+	unsigned char* p_common_rel_file;
+	int common_rel_file_size;
+	unsigned int common_rel_file_id;
+	unsigned char* p_common_gpu_file;
+	int common_gpu_file_size;
+	unsigned int common_gpu_file_id;
+	unsigned char* p_locale_dat_file;
+	int locale_dat_file_size;
+	unsigned int locale_dat_file_id;
+	unsigned char* p_locale_rel_file;
+	int locale_rel_file_size;
+	unsigned int locale_rel_file_id;
+	unsigned char* p_locale_gpu_file;
+	int locale_gpu_file_size;
+	unsigned int locale_gpu_file_id;
+	char common_gpu_filename[300];
+	char locale_gpu_filename[300];
+public:
+    CustomTextureManager m_TextureManager;
+    SiffTextManager m_TextManager;
+    KeyFrameManager m_KeyframeManager;
+    SiffObjectDefManager m_ObjectDefManager;
 };

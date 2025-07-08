@@ -34,17 +34,17 @@ public:
         memset(this, 0, sizeof(SlStringT<T>));
     }
 
-    SlStringT(char const* s) : SlStringT()
+    SlStringT(const char* s) : SlStringT()
     {
         IntAssign(s, IntGetLength(s));
     }
 
-    SlStringT(char const* s, unsigned int len) : SlStringT()
+    SlStringT(const char* s, unsigned int len) : SlStringT()
     {
         IntAssign(s, len);
     }
-    
-    SlStringT(SlStringT<char>& s) : SlStringT()
+
+    SlStringT(const SlStringT<T>& s) : SlStringT()
     {
         IntAssign(s.m_Data, s.m_Length);
     }
@@ -54,30 +54,55 @@ public:
         IntDeleteAll();
     }
 
-    void operator=(char const* s)
+    void operator=(const T* s)
     {
         IntAssign(s, IntGetLength(s));
     }
 
-    void operator=(SlStringT<T> const& s)
+    void operator=(const SlStringT<T>& s)
     {
         if (&s == this) return;
         IntAssign(s.m_Data, s.m_Length);
     }
-    
-    void IntAssign(char const* s, unsigned int len)
+
+    void operator+=(const SlStringT<T>& s)
     {
-        if (s == nullptr || len == 0)
+        IntConcat(s.m_Data, s.m_Length);
+    }
+
+    void operator+=(const T* s)
+    {
+        IntConcat(s, IntGetLength(s));
+    }
+
+    friend SlStringT<T> operator+(const SlStringT<T>& lhs, const SlStringT<T>& rhs)
+    {
+        SlStringT<T> r = lhs;
+        r += rhs;
+        return r;
+    }
+
+    friend SlStringT<T> operator+(const SlStringT<T>& lhs, const char* rhs)
+    {
+        SlStringT<T> r = lhs;
+        r += rhs;
+        return r;
+    }
+    
+    void IntAssign(T const* s, unsigned int len)
+    {
+        if (s != nullptr && len != 0)
         {
-            IntDeleteAll();
+            IntReserve(len + 1);
+            m_Length = len;
+            memcpy(m_Data, s, len * sizeof(T));
+            m_Data[len] = '\0';
+            m_Hash = 0;
+
             return;
         }
 
-        IntReserve(len + 1);
-        m_Length = len;
-        memcpy(m_Data, s, len);
-        m_Data[len] = '\0';
-        m_Hash = 0;
+        IntDeleteAll();
     }
 
     void IntReserve(unsigned int len)
@@ -85,26 +110,38 @@ public:
         if (len <= m_Capacity) return;
         m_Capacity = len;
 
-        T* dest = (T*)gSlMallocAlign(len * sizeof(T), 0x10);
+        T* dest = (T*)gSlMallocAlign(len * sizeof(T), 0x10, true);
         if (m_Data != nullptr)
-            memcpy(dest, m_Data, m_Length);
+            memcpy(dest, m_Data, m_Length * sizeof(T));
         
         if (m_Ref == 0 && m_Data != nullptr)
             gSlFree(m_Data, true);
         
-        dest[m_Length] = '\0';
         m_Data = (T*)dest;
         m_Ref = 0;
+        dest[m_Length] = '\0';
     }
 
     void IntDeleteAll()
     {
         if (m_Ref == 0 && m_Data != nullptr)
-            gSlFree(m_Data, false);
+            gSlFree(m_Data, true);
         m_Data = nullptr;
+        m_Capacity = 0;
         m_Hash = 0;
         m_Length = 0;
-        m_Capacity = 0;
+    }
+
+    void IntConcat(const T* s, size_t len)
+    {
+        if (s != nullptr && len != 0)
+        {
+            IntReserve(m_Length + len + 1);
+            memcpy(m_Data + m_Length, s, len * sizeof(T));
+            m_Length += len;
+            m_Data[m_Length] = '\0';
+            m_Hash = 0;
+        }
     }
 
     int CompareCaseInsensitive(const char* s) const

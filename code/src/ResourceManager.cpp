@@ -1,7 +1,5 @@
 #include "ResourceManager.hpp"
 
-SlReloc<ResourceManager> g_pResourceManager(0x0);
-
 ResourceList::~ResourceList()
 {
     UnloadResources();
@@ -9,23 +7,47 @@ ResourceList::~ResourceList()
 
 void ResourceList::AddResource(SlStringT<char> const& path)
 {
-    AddResource(path, kResourceType_Invalid, false, false);
+    AddResource(path, kResourceType_Invalid, false);
 }
 
-void ResourceList::AddResource(SlStringT<char> const& path, eResourceType type, bool a, bool b)
+void ResourceList::StartLoadResources()
+{
+    if (m_GameFiles == nullptr) return;
+    for (const auto& file : *m_GameFiles)
+        gResourceManager->LoadResource(file.Path, file.Type, file.A);
+}
+
+bool ResourceList::IsLoaded()
+{
+    if (m_GameFiles == nullptr) return true;
+    for (const auto& file : *m_GameFiles)
+    {
+        if (gResourceManager->IsLoading(file.Path))
+            return false;
+    }
+    
+    return true;
+}
+
+int ResourceList::GetSize()
+{
+    if (m_GameFiles == nullptr) return 0;
+    return m_GameFiles->size();
+}
+
+void ResourceList::AddResource(SlStringT<char> const& path, eResourceType type, bool a)
 {
     sGameFile file;
     file.Path = path;
     file.Type = type;
     file.A = a;
-    file.B = b;
 
     if (m_GameFiles == nullptr) 
         m_GameFiles = new std::vector<sGameFile>();
 
     for (const auto& file : *m_GameFiles)
     {
-        if (file.Path.CompareCaseInsensitive(path) != 0)
+        if (file.Path.CompareCaseInsensitive(path) == 0)
             return;
     }
 
@@ -37,9 +59,7 @@ void ResourceList::UnloadResources()
     if (m_GameFiles != nullptr)
     {
         for (const auto& file : *m_GameFiles)
-        {
-            // g_pResourceManager->UnloadResource(file);
-        }
+            gResourceManager->UnloadResource(file.Path);
     }
 
     ClearResourceList();
@@ -49,4 +69,5 @@ void ResourceList::ClearResourceList()
 {
     if (m_GameFiles == nullptr) return;
     delete m_GameFiles;
+    m_GameFiles = nullptr;
 }

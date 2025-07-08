@@ -1,5 +1,22 @@
 #pragma once
 
+#include <vector>
+#include "Core.hpp"
+
+#include <usb_hid_keys.h>
+
+#ifdef GetClassName
+    #undef GetClassName
+#endif
+
+enum
+{
+    kFocusChannel_Default = 0,
+    kFocusChannel_Frontend = 1,
+    kFocusChannel_PopUp = 3,
+    kFocusChannel_Debug = 10
+};
+
 enum SlButtonMasks
 {
     DPAD_UP = (1 << 0),
@@ -20,20 +37,55 @@ enum SlButtonMasks
     R2 = (1 << 15)
 };
 
-class SlDeviceInput {
+class SlInputDevice {
 public:
-    int GetRawAnalogFromChannel(int channel);
-    bool GetButtonDown(int channel, int mask);
-    bool GetButtonHeld(int channel, int mask);
-    bool GetButtonPressed(int channel, int mask);
-    bool GetButtonReleased(int channel, int mask);
+    virtual ~SlInputDevice();
+    virtual void Add();
+    virtual void Remove(bool);
+    virtual void Open();
+    virtual void Update();
+    virtual void Close();
+    virtual void RefreshPower();
+    virtual void ResetStates();
+    virtual int GetType();
+    virtual const char* GetClassName();
+    virtual void SetDefaultRemapTable();
+    virtual void SetDefaultAnalogConfig();
+    virtual void SetFocusChannel(unsigned int);
+public:
+    DEFINE_MEMBER_FN_1(GetCleanedFocusChannelRead, int, 0x0060f830, int channel);
+};
+
+class SlKeyboard : public SlInputDevice {
+public:
+    bool GetKeyPressed(int channel, int key);
+};
+
+class SlGamepad : public SlInputDevice {
+public:
+    virtual void SetRumble(int);
+    virtual void SetRumbleEX(float, float);
+    virtual SlStringT<char> GetDeviceFriendlyName() const;
+    virtual SlStringT<char> GetButtonFriendlyName() const;
+    virtual SlStringT<char> GetAnalogFriendlyName() const;
+    virtual void ProcessState();
+    virtual bool IsViewport();
+    virtual bool IsAudioCapable();
+    virtual void GetPadType(unsigned int&);
+    virtual bool UseAlternativePrimaryUIButton();
+    virtual int GetRawAnalogFromChannel(unsigned int) const;
+public:
+    DEFINE_MEMBER_FN_2(GetButtonDown, bool, 0x00402620, int channel, int mask);
+    DEFINE_MEMBER_FN_2(GetButtonHeld, bool, 0x0065c230, int channel, int mask);
+    DEFINE_MEMBER_FN_2(GetButtonPressed, bool, 0x00402650, int channel, int mask);
+    DEFINE_MEMBER_FN_2(GetButtonReleased, bool, 0x0065c260, int channel, int mask);
 private:
     void* GetFocusChannelRead(int channel);
 };
 
-
-extern SlDeviceInput*(*GetKeyboard)(int index);
-extern SlDeviceInput*(*GetGamepad)(int index);
-
-/// Initializes all function pointers and globals for the input manager on DLL inject.
-void SetupInputNatives();
+class SlInput {
+public:
+    inline static SlReloc<std::vector<SlInputDevice*>*> m_Device{0x00bc5e6c};
+    inline static SlReloc<std::vector<SlGamepad*>*> m_Gamepad{0x00bc5e64};
+    inline static SlReloc<std::vector<SlKeyboard*>*> m_Keyboard{0x00bc5e68};
+};

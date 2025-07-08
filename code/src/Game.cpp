@@ -1,4 +1,5 @@
 #include "Game.hpp"
+#include "ModLoader.hpp"
 
 void(*SlPrintf)(const char*, ...);
 void(*_SoftResetManager_DisablePolling)(void*);
@@ -22,8 +23,6 @@ void SetupGameNatives()
 {
     *(void**)(&SlPrintf) = (void*)GetAddress(0x205820);
     *(void**)(&_SoftResetManager_DisablePolling) = (void*)GetAddress(0x205820);
-    
-    SetupInputNatives();
 }
 
 void PauseGame()
@@ -46,3 +45,21 @@ void SoftResetManager_DisablePolling()
 {
 
 }
+
+bool RacerInfo::IsMod() const
+{
+    return CustomRacerIndex >= 0;
+}
+
+bool RacerInfo::IsModelSwap() const
+{
+    if (!IsMod()) return false;
+    return GetCustomRacer()->IsModelSwap;
+}
+
+SlCustomRacer* RacerInfo::GetCustomRacer() const
+{
+    if (!IsMod()) return nullptr;
+    return gSlMod->Racers[CustomRacerIndex];
+}
+

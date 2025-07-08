@@ -9,7 +9,6 @@ enum eResourceType {
     kResourceType_Binary,
     kResourceType_Text,
     kResourceType_SumoEngine,
-    kResourceType_SumoEngineSh2,
     kResourceType_SumoTool,
     kResourceType_SoundBank,
     kResourceType_SoundBank2,
@@ -24,7 +23,7 @@ public:
     {
         Type = file.Type;
         Path = file.Path;
-        A = file.A;
+        A = file.A; // GPU?
         B = file.B;
         return *this;
     }
@@ -35,9 +34,15 @@ public:
     bool B;
 };
 
+static_assert(sizeof(sGameFile) == 0x28, "sGameFile type size is incorrect!");
+
 class ResourceManager {
 public:
+    DEFINE_STATIC_MEMBER_FN_1(FileExists, int, 0x006fdbf0, const SlStringT<char>& resource);
     DEFINE_MEMBER_FN_1(UnloadResource, void, 0x006fe2d0, const SlStringT<char>& resource);
+    DEFINE_MEMBER_FN_3(LoadResource, void, 0x006feff0, const SlStringT<char>& resource, eResourceType type, bool b);
+    DEFINE_MEMBER_FN_1(IsLoading, bool, 0x006fe3a0, const SlStringT<char>& resource);
+    DEFINE_MEMBER_FN_1(GetResource, char*, 0x006fe590, const SlStringT<char>& resource);
 };
 
 class ResourceList {
@@ -48,11 +53,14 @@ public:
     int GetSize();
     void UnloadResources();
     void StartLoadResources();
+    DEFINE_MEMBER_FN_0(SortList, void, 0x0072b570);
     void AddResource(SlStringT<char> const& path);
-    void AddResource(SlStringT<char> const& path, eResourceType type, bool, bool);
+    void AddResource(SlStringT<char> const& path, eResourceType type, bool);
     void ClearResourceList();
-private:
+public:
     std::vector<sGameFile>* m_GameFiles;
 };
 
-void SetupResourceManagerNatives();
+static_assert(sizeof(std::vector<sGameFile>) == 0xc, "Vector is padded in your compiler!");
+
+inline SlReloc<ResourceManager*> gResourceManager(0x00bd0cf4);

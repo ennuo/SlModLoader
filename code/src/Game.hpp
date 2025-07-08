@@ -10,7 +10,14 @@
 #include "Core.hpp"
 
 // sizeof: 0x360
-struct RacerInfo {
+
+class SlCustomRacer;
+class RacerInfo {
+public:
+    bool IsMod() const;
+    bool IsModelSwap() const;
+    SlCustomRacer* GetCustomRacer() const;
+public:
     uint NameHash;
     char *DisplayName;
     int NetworkId;
@@ -34,8 +41,11 @@ struct RacerInfo {
     char *AttachVehicleToPlayer;
     bool UseMagicalTransform;
     bool VitaUseMagicalTransform;
-    undefined field23_0x56;
-    undefined field24_0x57;
+    
+    // Padding lets me slip this index in without
+    // breaking anything
+    short CustomRacerIndex;
+
     float SwitchVehicleDelay;
     float ShieldCarScale;
     float ShieldBoatScale;
@@ -109,27 +119,30 @@ struct RacerInfo {
     undefined4 field95_0x170;
     undefined4 field96_0x174;
     undefined4 field97_0x178;
-    bool field98_0x17c;
-    bool field99_0x17d;
-    bool field100_0x17e;
-    bool field101_0x17f;
-    bool field102_0x180;
-    bool field103_0x181;
+    bool AvailableInFrontEnd;
+    bool AvailableOnPc;
+    bool AvailableOnPs3;
+    bool AvailableOnVita;
+    bool AvailableOn360;
+    bool AvailableOnWiiU;
     undefined field104_0x182;
     undefined field105_0x183;
-    undefined4 field106_0x184;
+    int ModsBits;
     undefined4 field107_0x188;
-    undefined4 field108_0x18c;
-    undefined4 field109_0x190;
+    int CharSelectIconHash;
+    undefined4 CharSelectIconGlowHash;
     undefined4 field110_0x194;
-    undefined4 field111_0x198;
+    undefined4 GridOrder;
     undefined4 field112_0x19c;
     undefined4 field113_0x1a0;
     undefined4 field114_0x1a4;
     undefined4 field115_0x1a8;
     undefined4 field116_0x1ac;
     undefined4 field117_0x1b0;
-    undefined4 field118_0x1b4;
+    union
+    {
+        const char* RootFEEntity;
+    };
     undefined4 field119_0x1b8;
     undefined4 field120_0x1bc;
     undefined4 field121_0x1c0;
@@ -147,11 +160,11 @@ struct RacerInfo {
     undefined4 field133_0x1f0;
     undefined4 field134_0x1f4;
     undefined4 field135_0x1f8;
-    bool field136_0x1fc;
+    bool Unlocked;
     undefined field137_0x1fd;
     bool field138_0x1fe;
     undefined field139_0x1ff;
-    bool field140_0x200;
+    bool New;
     undefined field141_0x201;
     undefined field142_0x202;
     undefined field143_0x203;

@@ -12,30 +12,44 @@
 #include "Game.hpp"
 #include "Jenkins.hpp"
 #include "ModLoader.hpp"
+#include "Frontend.hpp"
 
 #include <windows.h>
 #include <toml.hpp>
 
 #include <iostream>
-#define LOG(x, ...) { printf(""##x##"\n", __VA_ARGS__); }
 
-class GameDatabase {
-public:
-    inline static SlReloc<unsigned int> m_uNumRacers{0x00bd0318};
+template <typename T>
+class SePtr {
+private:
+    T* mData0;
+    T* mData1;
 };
 
-SlReloc<bool> m_bOldFrontend(0x00bc6cd7);
+class SeInstanceEntityNode {};
+class SeInstanceAnimationStreamNode {};
+class SeNodeBase {};
 
-static uint8_t g_MaxRacers = 255;
-RacerInfo** g_FirstRacer;
-RacerInfo** g_LastRacer;
+const int kHash_Random = Hash("Random");
+const int kHash_Locked = Hash("Locked");
 
-void (__thiscall *GameCamera_SwitchTo)(void*, int);
-void (__thiscall *GameCamera_Reset)(void*);
-SlDeviceInput* (__thiscall *Racer_GetGamepad)(void*);
+// cCharacterLoader
+    // 0x0 - int State
+    // 0x4 - SePtr<SeInstanceEntityNode> Character
+    // 0xc - SePtr<SeInstanceEntityNode> Base
+    // 0x14 - SePtr<SeInstanceAnimationStreamNode> CarBaseIdle01
+    // 0x1c - SePtr<SeInstanceAnimationStreamNode> CarBaseIntoIdle01
+    // 0x24 - SePtr<SeInstanceAnimationStreamNode> CarBaseOutOfIdle01
+    // 0x2c - SlStringT<char> CharacterResourcePath
+    // 0x4c - SePtr<>
+    // 0x54 - ResourceList CharacterResources
+    // 0x58 - ResourceList BaseResources
+    // 0x5c - int NameHash
 
-// 54 visual racer slots
 
+    // se_anim_stream_${CharacterName}car|driveidle
+    // ${CharacterMayaFile}.mb:se_entity_${CharacterEntity}.model
+    // FeCharacters\\${CharacterName}_fe\\${CharacterName}_fe
 
 void PatchExecutableSection(void* address, void* data, int size)
 {
@@ -46,6 +60,7 @@ void PatchExecutableSection(void* address, void* data, int size)
     FlushInstructionCache(GetCurrentProcess(), address, size);
 }
 
+uint8_t g_MaxRacers = 255;
 void PatchWeaponSetupManager()
 {
     uint32_t new_hit_setup_base = 0x6040 + (g_MaxRacers * 0xb0);
@@ -84,141 +99,394 @@ void PatchWeaponSetupManager()
     // PatchExecutableSection((void*)0x42b86d, &nop, sizeof(uint8_t) * 2);
 }
 
-glm::vec3 g_CameraPosition;
-glm::vec3 g_CameraRotation;
-glm::mat4 g_InverseCameraRotation;
+class SoftResetManager {
+public:
+    inline static SlReloc<SoftResetManager*> ms_pSE_RTTI_SINGLETON{0x00e9a3f0};
+public:
+    DEFINE_MEMBER_FN_0(DisablePolling, void, 0x0069d500);
+};
+
+class GameDatabase {
+public:
+    inline static int m_uNumBaseRacers;
+    inline static int m_uNumCustomRacers;
+
+    inline static SlReloc<unsigned int> m_uNumRacers{0x00bd0318};
+    inline static SlReloc<RacerInfo*> m_pRacerInfo{0x00bd0268};
+public:
+    inline static void (*GameDatabase_SetupRacerData)();
+
+    static RacerInfo* GetRacer(int hash)
+    {
+        for (int i = 0; i < m_uNumRacers; ++i)
+        {
+            RacerInfo* racer = m_pRacerInfo + i;
+            if (racer->NameHash == hash)
+                return racer;
+        }
+
+        return nullptr;
+    }
+
+    void SetupRacerData()
+    {
+        GameDatabase_SetupRacerData();
 
 
-// void __fastcall cCharacterLoader_PerformLoad(void* self)
-// {
-//     ResourceList& resource_list = *(ResourceList*)((uintptr_t)self + 0x54);
-//     if (!resource_list.IsLoaded() && resource_list.GetSize() != 0) return;
+        m_uNumBaseRacers = m_uNumRacers;
+        m_uNumCustomRacers = gSlMod->Racers.size();
 
-//     resource_list.UnloadResources();
+        int size = m_uNumBaseRacers * sizeof(RacerInfo) + 4;
 
-//     SlStringT<char>& path = *(SlStringT<char>*)((uintptr_t)self + 0x2c);
-//     path = "FeCharacters\\QuestionMarkHolo\\QuestionMarkHolo";
+        int* old = ((int*)(RacerInfo*)m_pRacerInfo) - 1;
+        int* data = (int*)gSlMallocAlign(size + (m_uNumCustomRacers * sizeof(RacerInfo)), 4, true);
+        memcpy(data, old, size);
+        delete[] old;
 
-//     resource_list.AddResource(path, 3, false, false);
+        m_pRacerInfo = (RacerInfo*)(data + 1);
+        RacerInfo* custom = (RacerInfo*)(data + 1) + m_uNumBaseRacers;
+        m_uNumRacers = m_uNumBaseRacers + m_uNumCustomRacers;
+        *data = m_uNumRacers;
 
-    
-//     resource_list.StartLoadResources();
-// }
+        for (int i = 0; i < m_uNumBaseRacers; ++i)
+        {
+            m_pRacerInfo[i].CustomRacerIndex = -1;
+            m_pRacerInfo[i].RootFEEntity = nullptr;
+        }
+        
+        int custom_racer_index = 0;
+        for (const auto& racer : gSlMod->Racers)
+        {
+            RacerInfo* base_racer = nullptr;
+            for (int i = 0; i < m_uNumBaseRacers; ++i)
+            {
+                if (m_pRacerInfo[i].NameHash == racer->BaseHash)
+                {
+                    base_racer = &m_pRacerInfo[i];
+                    break;
+                }
+            }
 
+            if (base_racer == nullptr)
+            {
+                LOG("Could not find base racer %s (%08x) for %s (%08x)", racer->BaseId.m_Data, racer->BaseHash, racer->InternalId.m_Data, racer->NameHash);
+                continue;
+            }
 
-void (__thiscall *FreeCamera_OnUpdate)(void* self, float);
-void __fastcall OnFreeCameraUpdate(void* self, void* _eax, float f)
+            LOG("Adding %s (%s) to grid (base=%s)", racer->InternalId.m_Data, racer->DisplayName.m_Data, racer->BaseId.m_Data);
+
+            memcpy(custom, base_racer, sizeof(RacerInfo));
+
+            custom->GridOrder = 512 + custom_racer_index;
+            custom->CustomRacerIndex = custom_racer_index++;
+            custom->NameHash = racer->NameHash;
+            custom->DisplayName = racer->DisplayName;
+            custom->CharacterName = racer->InternalId;
+            if (!racer->IsModelSwap)
+            {
+                custom->CharacterMayaFile = racer->InternalId;
+                custom->CharacterEntity = racer->InternalId;
+            }
+            custom->CharSelectIconHash = racer->SelectIconHash;
+            custom->Unlocked = true;
+            custom->field137_0x1fd = true;
+            // custom->Parameter = racer->InternalId;
+            custom->AvailableInFrontEnd = true;
+            custom->AvailableOnPc = true;
+
+            custom->CharacterFlags |= 1; // DefaultCharacter
+            custom->CharacterFlags |= 2; // DefaultAICharacter
+
+            if (!racer->IsModelSwap)
+            {
+                custom->RootFEEntity = racer->RootFEEntity;
+                custom->CarAnimationFilePrefix = racer->CarAnimationFilePrefix;
+                custom->BoatAnimationFilePrefix = racer->BoatAnimationFilePrefix;
+                custom->PlaneAnimationFilePrefix = racer->PlaneAnimationFilePrefix;
+                custom->TransformAnimationFilePrefix = racer->TransformAnimationFilePrefix;
+            }
+
+            custom++;
+        }
+    }
+};
+
+class PartyManager {
+    DEFINE_MEMBER_FN_0(CountMemberNum, int, 0x0);
+    DEFINE_MEMBER_FN_1(GetPadIndexByCount, int, 0x0, int player);
+};
+
+class cCharacterSelectMulti;
+void(__thiscall *cCharacterSelectMulti_SetUpGrid)(void*);
+void (__thiscall *cCharacterSelectMulti_Update)(cCharacterSelectMulti*);
+void (__thiscall *cCharacterSelectMulti_TouchMenu_AreaPressed)(cCharacterSelectMulti*, int);
+
+bool gLoadedResources;
+ResourceList gResourceList;
+
+bool DoesSumoResourceExist(const SlStringT<char>& path)
 {
-    void** racers = (void**)LoadPointer(0x7CE920);
-    int num_racers = LoadMemory<int>(0x7CE924);
-    if (racers == nullptr || num_racers < 1) return;
-    void* racer = *racers;
-    if (racer == nullptr) return;
-    SlDeviceInput* gamepad = Racer_GetGamepad(racer);
-    if (gamepad == nullptr) return;
-
-    char* state_data = *(char**)((char*)gamepad + 0x57c);
-
-    float left_x = *(float*)(state_data + 0x94);
-    float left_y = *(float*)(state_data + 0x98);
-
-    float right_x = *(float*)(state_data + 0xa0);
-    float right_y = *(float*)(state_data + 0xa4);
-
-    float l2 = *(float*)(state_data + 0xcc);
-    float r2 = *(float*)(state_data + 0xd4);
-
-    glm::vec3& pos = *(glm::vec3*)((uintptr_t)self + 0x10);
-    glm::vec3& front = *(glm::vec3*)((uintptr_t)self + 0x20);
-    glm::vec3& up = *(glm::vec3*)((uintptr_t)self + 0x30);
-
-    g_CameraRotation.x += right_y * 0.01f;
-    g_CameraRotation.y += right_x * 0.01f;
-
-    g_InverseCameraRotation = 
-        glm::rotate(glm::mat4(1.0f), -g_CameraRotation.z, glm::vec3(0.0f, 0.0f, 1.0f)) *
-        glm::rotate(glm::mat4(1.0f), -g_CameraRotation.y, glm::vec3(0.0f, 1.0f, 0.0f)) *
-        glm::rotate(glm::mat4(1.0f), -g_CameraRotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
-
-    g_CameraPosition += glm::vec4(-left_x, left_y, -l2 + r2, 1.0f) * g_InverseCameraRotation;
-
-    glm::mat4 rotation =
-        glm::rotate(glm::mat4(1.0f), g_CameraRotation.z, glm::vec3(0.0f, 0.0f, 1.0f)) *
-        glm::rotate(glm::mat4(1.0f), g_CameraRotation.y, glm::vec3(0.0f, 1.0f, 0.0f)) *
-        glm::rotate(glm::mat4(1.0f), g_CameraRotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
-
-    glm::mat4 translation =
-        glm::translate(glm::mat4(1.0f), g_CameraPosition);
-
-    glm::mat4 view = rotation * translation; 
-    glm::mat4 inverse = glm::inverse(view);
-
-    pos = g_CameraPosition;
-    front = g_CameraPosition + glm::vec3(glm::normalize(glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) * inverse));
-    up = glm::normalize(glm::vec4(0.0f, 1.0f, 0.0f, 1.0f) * inverse);
+    SlStringT<char> filename = path;
+    filename += ".cpu.spc";
+    return gResourceManager->FileExists(filename);
 }
 
-// free camera is 5
-void(*RaceHandler_Update)(float);
-void OnRaceHandlerUpdate(float f)
+__declspec(naked) int MakeCharacterFilename(SlStringT<char> path, RacerInfo* info, SlStringT<char>& filename) noexcept
 {
-    RaceHandler_Update(f);
+    __asm {
+        push ebp
+        mov ebp, esp
+        sub esp, __LOCAL_SIZE
 
-    void** racers = (void**)LoadPointer(0x7CE920);
-    int num_racers = LoadMemory<int>(0x7CE924);
-    if (racers == nullptr || num_racers < 1) return;
-    void* racer = *racers;
-    if (racer == nullptr) return;
+        mov filename, ecx
+    }
 
-    SlDeviceInput* gamepad = Racer_GetGamepad(racer);
-    if (gamepad == nullptr) return;
-
-    void* camera = *(void**)((uintptr_t)racer + 0xc1b4);
-    if (camera == nullptr) return;
-
-    int camera_type = *(int*)((uintptr_t)camera + 0x484);
-    // if (camera_type == 5)
-    //     OnFreeCameraUpdate(*(void**)((uintptr_t)camera + 0x464), nullptr, 0.0f);
-
-    if (gamepad->GetButtonPressed(10, L3))
+    int status;
     {
-        if (camera_type != 5)
+        if (info->IsMod())
         {
-            GameCamera_SwitchTo(camera, 5);
+            filename = info->GetCustomRacer()->CharacterFile;
         }
         else
         {
-            GameCamera_SwitchTo(camera, 0);
+            filename = path;
+            filename += info->CharacterName;
+            filename += "\\";
+            filename += info->CharacterName;
         }
 
-        GameCamera_Reset(camera);
+        LOG("- %s", filename.m_Data);
+
+        SlStringT<char> resource = filename;
+        resource += ".cpu.spc";
+        status = gResourceManager->FileExists(resource);
+    }
+
+    __asm {
+        mov eax, status
+        mov esp, ebp
+        pop ebp
+        ret
     }
 }
 
-void(__thiscall *cCharacterSelectMulti_SetUpGrid)(void*);
-void __fastcall OnSetUpGrid(void* self)
-{
-    char buf[255];
-    for (int i = 40; i < 54; ++i)
+class cCharacterSelectMulti : public cFrontendScene {
+public:
+    inline static std::vector<RacerInfo*> m_Racers;
+    inline static SlReloc<std::vector<RacerInfo*>> m_Page{0x00c51c08};
+    inline static SlReloc<int> m_PageSize{0x00c51bc4};
+    inline static SlReloc<uintptr_t*> __vtbl{0x00a2eec4};
+    inline static SlReloc<int> m_uiSelectedChar{0x00c51ba4};
+    inline static SlReloc<bool> m_uiReloadChar{0x00c51bb8};
+    inline static int m_PageIndex;
+    static const int kMaxPageSize = 25;
+public:
+    DEFINE_MEMBER_FN_4(SetHighlighters, void, 0x0084e0c0, int a, bool b, bool c, bool d);
+public:
+    void TouchMenu_AreaPressedImpl(int e)
     {
-        sprintf(buf, "CHARACTER_SELECT\\CHAR_MOVE_%d", i);
-        gSceneManager->HideObject(sumohash(buf), true);
-        sprintf(buf, "CHARACTER_SELECT\\CHAR_STATE_%d", i);
-        gSceneManager->HideObject(sumohash(buf), true);
-        sprintf(buf, "CHARACTER_SELECT\\CHAR_%d", i);
-        gSceneManager->HideObject(sumohash(buf), true);
-        sprintf(buf, "CHARACTER_SELECT\\MAXED_ICON_%d", i);
-        gSceneManager->HideObject(sumohash(buf), true);
-        sprintf(buf, "CHARACTER_SELECT\\CHAR_%d_BACKGROUND_A", i);
-        gSceneManager->HideObject(sumohash(buf), true);
-        sprintf(buf, "CHARACTER_SELECT\\CHAR_%d_BACKGROUND_B", i);
-        gSceneManager->HideObject(sumohash(buf), true);
-        sprintf(buf, "CHARACTER_SELECT\\CHAR_%d_FOREGROUND", i);
-        gSceneManager->HideObject(sumohash(buf), true);
+        cCharacterSelectMulti_TouchMenu_AreaPressed(this, e);
     }
 
-    cCharacterSelectMulti_SetUpGrid(self);
+    void UpdateImpl()
+    {
+        for (int i = 0; i < (*SlInput::m_Gamepad).size(); ++i)
+        {
+            int state = cFrontEndManager::ms_pSE_RTTI_SINGLETON->GetControllerState(i);
+
+            int old_page = m_PageIndex;
+
+            if (i == 0)
+            {
+                SlKeyboard* keyboard = (*SlInput::m_Keyboard)[0];
+                if (keyboard->GetKeyPressed(kFocusChannel_Frontend, KEY_Q)) state |= 0x1000;
+                if (keyboard->GetKeyPressed(kFocusChannel_Frontend, KEY_E)) state |= 0x2000;
+            }
+
+
+            if (state & 0x1000 || state & 0x400) m_PageIndex--;
+            if (state & 0x2000 || state & 0x800) m_PageIndex++;
+
+            if (m_PageIndex < 0) m_PageIndex = 0;
+            if (m_PageIndex * kMaxPageSize >= m_Racers.size())
+                m_PageIndex--;
+
+            if (old_page != m_PageIndex)
+            {
+                SetUpGrid();
+
+                int& ch = (&m_uiSelectedChar)[cFrontEndManager::m_MasterPlayerDevice];
+                if (ch >= m_Page->size()) ch = m_Page->size() - 1;
+                (&m_uiReloadChar)[cFrontEndManager::m_MasterPlayerDevice] = true;
+                SetHighlighters(cFrontEndManager::m_MasterPlayerDevice, false, true, false);
+            }
+        }
+
+        // frontend controller state
+            // & 0x20 = CROSS
+            // & 0x40 = CIRCLE
+            // & 0x80 = SQUARE
+            // & 0x100 = TRIANGLE
+            // & 0x200 = START
+            // & 0x400 = L2
+            // & 0x800 = R2
+            // & 0x1000 = L1
+            // & 0x2000 = R1
+            // & 0x4000 = SELECT
+
+        cCharacterSelectMulti_Update(this);
+    }
+
+    void SetUpGrid()
+    {
+        // When this class is constructed, the page variable is the original
+        // racers array, but it's more convenient to use that as a page variable
+        if (m_Racers.size() == 0) 
+        {
+            m_Racers = m_Page;
+            gSlMod->LoadFrontendAssets(&gResourceList);
+            gResourceList.StartLoadResources();
+        }
+
+        m_Page->clear();
+
+        int start = m_PageIndex * kMaxPageSize;
+
+        m_PageSize = m_Racers.size() - start;
+        if ((int)m_PageSize > kMaxPageSize) m_PageSize = kMaxPageSize;
+
+        for (int i = start, j = 0; j < (int)m_PageSize; ++i, ++j)
+        {
+            RacerInfo* info = m_Racers[i];
+            int index = info - &GameDatabase::m_pRacerInfo[0];
+            bool isMaxLevel = info->ModsBits == 0x7f;
+
+            gSceneManager->ShowObject("CHARACTER_SELECT\\CHAR_%d_MOVE", j);
+            gSceneManager->ShowObject("CHARACTER_SELECT\\CHAR_%d", j);
+            
+
+            const int kHash_Notification = HashF("CHARACTER_SELECT\\MAXED_ICON_%d", j);
+            if (isMaxLevel)
+            {
+                gSceneManager->ShowObject(kHash_Notification);
+                gSceneManager->SetNewTexture("Notification_Maxed.tga", kHash_Notification);
+
+            }
+            else
+            {
+                gSceneManager->HideObject(kHash_Notification);
+            }
+
+            if (info->Unlocked && info->New)
+            {
+                gSceneManager->SetNewTexture("Notification_ExclamationMark.tga", kHash_Notification);
+                gSceneManager->ShowObject(kHash_Notification);
+            }
+
+
+            if (info->IsMod())
+            {
+                SlCustomRacer* racer = info->GetCustomRacer();
+                gSceneManager->SetNewTexture(racer->FrontendResources, racer->SelectIconHash, "CHARACTER_SELECT\\CHAR_STATE_%d", j);
+                gSceneManager->HideObject("CHARACTER_SELECT\\CHAR_GLOW_%d", j);
+            }
+            else
+            {
+                gSceneManager->SetNewTexture(info->CharSelectIconGlowHash "CHARACTER_SELECT\\CHAR_GLOW_%d", j);
+                gSceneManager->SetNewTexture(info->CharSelectIconHash, "CHARACTER_SELECT\\CHAR_STATE_%d", j);
+            }
+        
+
+
+            m_Page->push_back(info);
+        }
+
+        for (int i = m_PageSize; i < 64; ++i)
+        {
+            gSceneManager->HideObject("CHARACTER_SELECT\\CHAR_%d_MOVE", i);
+            gSceneManager->HideObject("CHARACTER_SELECT\\CHAR_%d", i);
+        }
+
+        gSceneManager->HideObject("CHARACTER_SELECT\\CHAR_TOP_2_COL_MOVE");
+        gSceneManager->HideObject("CHARACTER_SELECT\\CHAR_TOP_3_COL_MOVE");
+        gSceneManager->HideObject("CHARACTER_SELECT\\CHAR_BOTTOM_2_COL_MOVE");
+        gSceneManager->HideObject("CHARACTER_SELECT\\CHAR_BOTTOM_3_COL_MOVE");
+        gSceneManager->HideObject("CHARACTER_SELECT\\CHAR_BOTTOM_4_COL_MOVE");
+        gSceneManager->HideObject("CHARACTER_SELECT\\CHAR_BOTTOM_5_COL_MOVE");
+        gSceneManager->HideObject("CHARACTER_SELECT\\CHAR_EXTRA_4_COL_MOVE");
+        gSceneManager->HideObject("CHARACTER_SELECT\\CHAR_EXTRA_5_COL_MOVE");
+
+
+    }
+};
+
+std::vector<RacerInfo*> Hack_GetPlayerUsableUnlockedCharacters_UpdateStats(bool)
+{
+    return cCharacterSelectMulti::m_Page;
 }
+
+class cCharacterLoader {
+public:
+    inline static SlReloc<unsigned int> mLoadingCounter{0x00c56950};
+public:
+    void PerformLoad()
+    {
+        CharacterHash = RequestedCharacterHash;
+        if (!CharacterResources.IsLoaded() && CharacterResources.GetSize() != 0) return;
+        CharacterResources.UnloadResources();
+
+        if (CharacterHash == kHash_Random)
+            CharacterResourcePath = "FeCharacters\\QuestionMarkWhite\\QuestionMarkWhite"; 
+        else if (CharacterHash == kHash_Locked)
+            CharacterResourcePath = "FeCharacters\\QuestionMarkHolo\\QuestionMarkHolo";
+        else
+        {
+            RacerInfo* racer = GameDatabase::GetRacer(CharacterHash);
+            if (racer->IsMod())
+            {
+                SlCustomRacer* custom = racer->GetCustomRacer();
+
+                LOG("%s, %s, %s", custom->FrontendCharacterFile.m_Data, custom->CharacterFile.m_Data, custom->InternalId.m_Data);
+
+                if (DoesSumoResourceExist(custom->FrontendCharacterFile))
+                    CharacterResourcePath = custom->FrontendCharacterFile;
+                else if (DoesSumoResourceExist(custom->CharacterFile))
+                    CharacterResourcePath = custom->CharacterFile;
+                else
+                    CharacterResourcePath = "FeCharacters\\QuestionMarkWhite\\QuestionMarkWhite"; 
+            }
+            else
+            {
+                char buf[512];
+                sprintf(buf, "FeCharacters\\%s_fe\\%s_fe", racer->CharacterName, racer->CharacterName);
+                CharacterResourcePath = buf;
+            }
+        }
+
+        LOG(" - Loading frontend character: %s", CharacterResourcePath.m_Data);
+
+        CharacterResources.AddResource(CharacterResourcePath, kResourceType_SumoEngine, false);
+
+        if (mLoadingCounter == 0)
+            SoftResetManager::ms_pSE_RTTI_SINGLETON->DisablePolling();
+        mLoadingCounter++;
+
+        CharacterResources.StartLoadResources();
+    }
+public:
+    int State;
+    SePtr<SeInstanceEntityNode> Character;
+    SePtr<SeInstanceEntityNode> Base;
+    SePtr<SeInstanceAnimationStreamNode> CarBaseIdle01;
+    SePtr<SeInstanceAnimationStreamNode> CarBaseIntoIdle01;
+    SePtr<SeInstanceAnimationStreamNode> CarBaseOutOfIdle01;
+    SlStringT<char> CharacterResourcePath;
+    SePtr<SeNodeBase> unk;
+    ResourceList CharacterResources;
+    ResourceList BaseResources;
+    int CharacterHash;
+    int RequestedCharacterHash;
+};
 
 // This function call seems to have been optimized, so the second argument gets passed into EDI, I don't think
 // there's a standard calling convention for this? So we'll have to use a naked function definition.
@@ -247,42 +515,39 @@ __declspec(naked) Siff::Object::TableEntry* __fastcall OnGetObjectDef(SiffObject
     }
 }
 
-class FrontEndManager {
+void (__thiscall *VehicleModel_Create)(void*, void*, int, void*, void*, void*, RacerInfo*);
+class VehicleModelProxy {
 public:
-    inline static SlReloc<ResourceList> m_FrontEndResources{0xFC7870};
-public:
-    void AddFrontEndResources(sGameFile* files)
+    void Create(void* racer, int type, void* file, void* anim_state_info, void* anim_params, RacerInfo* info)
     {
-        // The texture manager seems to work by only loading the first instance of
-        // a texture with a specific UID.
-        // So if we load any of our custom frontend resource packs first, we should
-        // have priority over the default ones.
-
-
-        MessageBoxA(NULL, "Loading our resources!", "DEBUG", MB_OK);
-
-
-        // Load the standard pre-requisites for the frontend.
-        while (files->Type != kResourceType_Invalid)
-        {
-            const auto& file = *files;
-            m_FrontEndResources->AddResource(file.Path, file.Type, false, false);
-            files++;
-        }
-
+        if (info->IsModelSwap())
+            info->CharacterName = info->GetCustomRacer()->BaseId;
+        VehicleModel_Create((void*)this, racer, type, file, anim_state_info, anim_params, info);
+        if (info->IsModelSwap())
+            info->CharacterName = info->GetCustomRacer()->InternalId;
     }
 };
+
+void __fastcall InitStartup(cStartup* startup)
+{
+    new (startup) cStartup();
+}
 
 void InitHooks()
 {
     MH_Initialize();
 
-    // CREATE_HOOK(0x448B90, OnSetUpGrid, &cCharacterSelectMulti_SetUpGrid);
-    CREATE_HOOK(0x96700, OnGetObjectDef, nullptr);
-    CREATE_MEMBER_HOOK(0x2828B0, FrontEndManager::AddFrontEndResources, nullptr);
-    // CREATE_HOOK((0x00722cc0 - kExecutableBase), NullFn, nullptr);
-    // CREATE_HOOK(0x2AAE40, OnRaceHandlerUpdate, &RaceHandler_Update);
-    // CREATE_HOOK(0x48CFA0, OnFreeCameraUpdate, &FreeCamera_OnUpdate);
+
+    CREATE_MEMBER_HOOK(0x007bad80, VehicleModelProxy::Create, &VehicleModel_Create);
+    CREATE_MEMBER_HOOK(0x00850d50, cCharacterSelectMulti::TouchMenu_AreaPressedImpl, &cCharacterSelectMulti_TouchMenu_AreaPressed);
+    CREATE_MEMBER_HOOK(0x00851390, cCharacterSelectMulti::UpdateImpl, &cCharacterSelectMulti_Update);
+    CREATE_MEMBER_HOOK(0x00848b90, cCharacterSelectMulti::SetUpGrid, &cCharacterSelectMulti_SetUpGrid);
+    CREATE_MEMBER_HOOK(0x006dec10, GameDatabase::SetupRacerData, &GameDatabase::GameDatabase_SetupRacerData);
+    CREATE_MEMBER_HOOK(0x008c7710, cCharacterLoader::PerformLoad, nullptr);
+    CREATE_HOOK(0x496700, OnGetObjectDef, nullptr);
+    CREATE_HOOK(0x0079a3c0, MakeCharacterFilename, nullptr);
+
+    // CREATE_MEMBER_HOOK(0x007564c0, InitStartup, nullptr);
 
     MH_EnableHook(MH_ALL_HOOKS);
 }
@@ -307,19 +572,19 @@ bool WantRebuildSumoToolCache(const std::filesystem::path& cachedir, const std::
 
 class SlTextureEntry {
 public:
-    SlTextureEntry() : Hash(), Path() {}
-    SlTextureEntry(int hash, const std::filesystem::path& path) : Hash(hash), Path(path) {}
+    SlTextureEntry() : mHash(), mPath() {}
+    SlTextureEntry(int hash, const std::filesystem::path& path) : mHash(hash), mPath(path) {}
     SlTextureEntry(const std::string& name, const std::filesystem::path& path)
     {
         char local[MAX_PATH];
-        sprintf(local, "%s/%s", name.c_str(), path.filename().string().c_str());
+        sprintf(local, "%s\\%s", name.c_str(), path.filename().string().c_str());
 
-        Hash = sumohash(local);
-        Path = path;
+        mHash = Hash(local);
+        mPath = path;
     }
 public:
-    int Hash;
-    std::filesystem::path Path;
+    int mHash;
+    std::filesystem::path mPath;
 };
 
 void BuildSpriteAtlas(const std::vector<SlTextureEntry>& sprites, std::filesystem::path output)
@@ -336,21 +601,21 @@ void BuildSpriteAtlas(const std::vector<SlTextureEntry>& sprites, std::filesyste
     for (int i = 0; i < size; ++i)
     {
         auto& info = infos[i];
-        HRESULT res = DirectX::GetMetadataFromWICFile(sprites[i].Path.wstring().c_str(), DirectX::WIC_FLAGS_NONE, info);
+        HRESULT res = DirectX::GetMetadataFromWICFile(sprites[i].mPath.wstring().c_str(), DirectX::WIC_FLAGS_NONE, info);
 
         stbrp_rect rect;
         rect.id = i;
 
         if (res != NOERROR)
         {
-            LOG(" - Failed to get metadata for %s", sprites[i].Path.string().c_str());
+            LOG(" - Failed to get metadata for %s", sprites[i].mPath.string().c_str());
 
             rect.w = 0;
             rect.h = 0;
         }
         else
         {
-            LOG(" - %s (%dx%d)", sprites[i].Path.string().c_str(), info.width, info.height);
+            LOG(" - %s (%dx%d)", sprites[i].mPath.string().c_str(), info.width, info.height);
 
             rect.w = info.width;
             rect.h = info.height;
@@ -397,7 +662,7 @@ void BuildSpriteAtlas(const std::vector<SlTextureEntry>& sprites, std::filesyste
 
 
         DirectX::ScratchImage scratch_image;
-        HRESULT res = DirectX::LoadFromWICFile(sprite.Path.wstring().c_str(), DirectX::WIC_FLAGS_NONE, nullptr, scratch_image);
+        HRESULT res = DirectX::LoadFromWICFile(sprite.mPath.wstring().c_str(), DirectX::WIC_FLAGS_NONE, nullptr, scratch_image);
         if (res != NOERROR) continue;
 
         auto image = scratch_image.GetImage(0, 0, 0);
@@ -481,7 +746,7 @@ void BuildSpriteAtlas(const std::vector<SlTextureEntry>& sprites, std::filesyste
         if (rect.w == 0 || rect.h == 0) continue;
 
         Siff::Texture& t = texture[rect.id];
-        t.Hash = sprites[rect.id].Hash;
+        t.Hash = sprites[rect.id].mHash;
         GET_ATLAS_POSITION(t.TopLeft, rect.x, rect.y)
         GET_ATLAS_POSITION(t.TopRight, rect.x + rect.w, rect.y);
         GET_ATLAS_POSITION(t.BottomRight, rect.x + rect.w, rect.y + rect.h);
@@ -565,7 +830,9 @@ void InstallMod(const std::filesystem::path& moddir)
     if (!config["enabled"].value_or(true)) return;
 
     std::string version = config["version"].value_or("1.0.0");
-    std::string name = config["name"].value_or(moddir.filename().string().c_str());
+
+    std::string dirname = moddir.filename().string();
+    std::string name = config["name"].value_or(dirname.c_str());
     LOG("%s", name.c_str());
 
     auto cache_path = std::filesystem::relative("data/modcache") / name; 
@@ -607,22 +874,57 @@ void InstallMod(const std::filesystem::path& moddir)
         LOG(" - Loading Racer!");
         BuildSumoToolCache(name, meta_path, cache_path, version, kModType_Racer);
 
-
         SlCustomRacer* racer = new SlCustomRacer();
-        racer->BaseId = config["racer"]["echo"].value_or("amd");
-        racer->InternalId = config["racer"]["id"].value_or("sonic");
-        racer->DisplayName = config["racer"]["name"].value_or("Unnamed Racer");
+        racer->BaseId = config["racer"]["echo"].value_or("charmybee");
+        racer->InternalId = config["racer"]["id"].value_or("charmybee");
+        racer->DisplayName = config["racer"]["name"].value_or("Charmy Bee");
         racer->FrontendResources = SlStringT<char>(("modcache\\" + name + "\\frontend").c_str());
         racer->GameResources = SlStringT<char>(("modcache\\" + name + "\\race").c_str());
 
+        racer->IsModelSwap = racer->BaseId.CompareCaseInsensitive("charmybee") != 0;
+
+        racer->CharacterFile = SlStringT<char>(("mods\\" + dirname + "\\char\\" + racer->InternalId.m_Data).c_str());
+        racer->FrontendCharacterFile = SlStringT<char>(("mods\\" + dirname + "\\char\\" + racer->InternalId.m_Data + "_fe").c_str());
+
+        racer->RootFEEntity = racer->InternalId + "_car";
+        racer->CarAnimationFilePrefix = racer->InternalId + "_car_anims";
+        racer->BoatAnimationFilePrefix = racer->InternalId + "_boat_anims";
+        racer->PlaneAnimationFilePrefix = racer->InternalId + "_plane_anims";
+        racer->TransformAnimationFilePrefix = racer->InternalId + "_transform_anims";
+
+        racer->NameHash = Hash(racer->InternalId);
+        racer->BaseHash = Hash(racer->BaseId);
+        racer->SelectIconHash = Hash((name + "\\icon.png").c_str());
+        racer->VersusPortraitHash = Hash((name + "\\versus.png").c_str());
+        racer->MinimapIconHash = Hash((name + "\\minimap.png").c_str());
+        racer->RaceResultsHash = Hash((name + "\\results.png").c_str());
+
         gSlMod->Racers.push_back(racer);
-
-
-
     }
 }
 
+SlCustomRacer* SlModManager::GetRacerByHash(int hash)
+{
+    for (const auto& racer : Racers)
+    {
+        if (racer->NameHash == hash)
+            return racer;
+    }
 
+    return nullptr;
+}
+
+void SlModManager::LoadFrontendAssets(ResourceList* resources)
+{
+    for (const auto& racer : Racers)
+    {
+        LOG(" - Loading %s", racer->FrontendResources.m_Data);
+        if (resources == nullptr)
+            gResourceManager->LoadResource(racer->FrontendResources, kResourceType_SumoTool, false);
+        else
+            resources->AddResource(racer->FrontendResources, kResourceType_SumoTool, false);
+    }
+}
 
 void ClvMain()
 {
@@ -646,12 +948,10 @@ void ClvMain()
     PatchWeaponSetupManager();
     InitHooks();
 
-    *(void**)(&GameCamera_SwitchTo) = (void*)GetAddress(0x364840);
-    *(void**)(&Racer_GetGamepad) = (void*)GetAddress(0x2BC280);
-    *(void**)(&GameCamera_Reset) = (void*)GetAddress(0x364420);
 
-    g_FirstRacer = (RacerInfo**)(gMemoryBase + 0x851C08);
-    g_LastRacer = (RacerInfo**)(gMemoryBase + 0x851C0c);
+    uintptr_t fnd = (uintptr_t)&Hack_GetPlayerUsableUnlockedCharacters_UpdateStats - 0x00849e4f;
+    PatchExecutableSection((void*)0x00849e4b, &fnd, sizeof(uintptr_t));
+
 }
 
 void ClvClose()

@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <concepts>
 
+#define LOG(x, ...) { printf(""##x##"\n", __VA_ARGS__); }
+
 extern uintptr_t gMemoryBase;
 const uintptr_t kExecutableBase = 0x00400000;
 
@@ -10,8 +12,8 @@ const uintptr_t kExecutableBase = 0x00400000;
 
 #define INLINE_ALWAYS __forceinline
 
-#define CREATE_HOOK(address, hook, original) MH_CreateHook((void*)((uintptr_t)gMemoryBase + address), (void*)&hook, (void**)original);
-#define CREATE_MEMBER_HOOK(address, hook, original) MH_CreateHook((void*)((uintptr_t)gMemoryBase + address), (void*)GetFnAddr(&hook), (void**)original);
+#define CREATE_HOOK(address, hook, original) MH_CreateHook((void*)ASLR(address), (void*)&hook, (void**)original);
+#define CREATE_MEMBER_HOOK(address, hook, original) MH_CreateHook((void*)ASLR(address), (void*)GetFnAddr(&hook), (void**)original);
 
 class SlPreInitGlobals {
 public:
@@ -28,6 +30,19 @@ public:
 
     T operator->() const requires (std::is_pointer_v<T>) { return *mData; }
     T* operator->() const requires (!std::is_pointer_v<T>) { return mData; }
+
+    T& operator++()
+    {
+        *mData++;
+        return *mData;
+    }
+
+    T operator++(int)
+    {
+        T old = *mData;
+        operator++();
+        return old;
+    }
 
     T* operator&() const { return mData; }
     T& operator=(const T& rhs) { *mData = rhs; return *mData; }
@@ -55,56 +70,73 @@ inline char* GetAddress(int address)
     return (char*)((uintptr_t)gMemoryBase + address);
 }
 
+#define DEFINE_STATIC_MEMBER_FN_0(fnName, retnType, addr) \
+    static INLINE_ALWAYS retnType fnName() { \
+    typedef retnType(__cdecl *_##fnName_t)(); \
+    const static uintptr_t address = ASLR(addr); \
+    _##fnName_t fn = *(_##fnName_t*)&address; \
+    return fn(); \
+}
+
+#define DEFINE_STATIC_MEMBER_FN_1(fnName, returnType, ADDR, ...) \
+    inline static uintptr_t __m_p##fnName{ASLR(ADDR)}; \
+    template <typename T1> \
+    static INLINE_ALWAYS returnType fnName(T1 && t1) { \
+    typedef returnType(__cdecl *delegate)( __VA_ARGS__); \
+    delegate fn = *(delegate*)&__m_p##fnName; \
+    return fn(t1); \
+}
+
 #define DEFINE_MEMBER_FN_0(fnName, retnType, addr) \
     INLINE_ALWAYS retnType fnName() { \
-    typedef retnType(__thiscall *_##fnName##_type)(uintptr_t); \
+    typedef retnType(*_##fnName_t)(uintptr_t); \
     const static uintptr_t address = ASLR(addr); \
-    _##fnName##_type fn = *(_##fnName##_type*)&address; \
+    _##fnName_t fn = *(_##fnName_t*)&address; \
     return fn((uintptr_t)this); \
 }
 
-#define DEFINE_MEMBER_FN_1(fnName, retnType, addr, ...) \
+#define DEFINE_MEMBER_FN_1(fnName, returnType, ADDR, ...) \
+    inline static uintptr_t __m_p##fnName{ASLR(ADDR)}; \
     template <typename T1> \
-    INLINE_ALWAYS retnType fnName(T1 && t1) { \
-    typedef retnType(__thiscall *_##fnName##_type)(uintptr_t, __VA_ARGS__); \
-    const static uintptr_t address = ASLR(addr); \
-    _##fnName##_type fn = *(_##fnName##_type*)&address; \
-    return fn((uintptr_t)this, t1); \
+    INLINE_ALWAYS returnType fnName(T1 && t1) { \
+    typedef returnType(__thiscall *delegate)(decltype(this), __VA_ARGS__); \
+    delegate fn = *(delegate*)&__m_p##fnName; \
+    return fn(this, t1); \
 }
 
 #define DEFINE_MEMBER_FN_2(fnName, retnType, addr, ...) \
     template <typename T1, typename T2> \
     INLINE_ALWAYS retnType fnName(T1 && t1, T2 && t2) { \
-    typedef retnType(__thiscall *_##fnName##_type)(uintptr_t, __VA_ARGS__); \
+    typedef retnType(__thiscall *_##fnName_t)(uintptr_t, __VA_ARGS__); \
     const static uintptr_t address = ASLR(addr); \
-    _##fnName##_type fn = *(_##fnName##_type*)&address; \
+    _##fnName_t fn = *(_##fnName_t*)&address; \
     return fn((uintptr_t)this, t1, t2); \
 }
 
 #define DEFINE_MEMBER_FN_3(fnName, retnType, addr, ...) \
     template <typename T1, typename T2, typename T3> \
     INLINE_ALWAYS retnType fnName(T1 && t1, T2 && t2, T3 && t3) { \
-    typedef retnType(__thiscall *_##fnName##_type)(uintptr_t, __VA_ARGS__); \
+    typedef retnType(__thiscall *_##fnName_t)(uintptr_t, __VA_ARGS__); \
     const static uintptr_t address = ASLR(addr); \
-    _##fnName##_type fn = *(_##fnName##_type*)&address; \
+    _##fnName_t fn = *(_##fnName_t*)&address; \
     return fn((uintptr_t)this, t1, t2, t3); \
 }
 
 #define DEFINE_MEMBER_FN_4(fnName, retnType, addr, ...) \
     template <typename T1, typename T2, typename T3, typename T4> \
     INLINE_ALWAYS retnType fnName(T1 && t1, T2 && t2, T3 && t3, T4 && t4) { \
-    typedef retnType(__thiscall *_##fnName##_type)(uintptr_t, __VA_ARGS__); \
+    typedef retnType(__thiscall *_##fnName_t)(uintptr_t, __VA_ARGS__); \
     const static uintptr_t address = ASLR(addr); \
-    _##fnName##_type fn = *(_##fnName##_type*)&address; \
+    _##fnName_t fn = *(_##fnName_t*)&address; \
     return fn((uintptr_t)this, t1, t2, t3, t4); \
 }
 
 #define DEFINE_MEMBER_FN_5(fnName, retnType, addr, ...) \
     template <typename T1, typename T2, typename T3, typename T4, typename T5> \
     INLINE_ALWAYS retnType fnName(T1 && t1, T2 && t2, T3 && t3, T4 && t4, T5 && t5) { \
-    typedef retnType(__thiscall *_##fnName##_type)(uintptr_t, __VA_ARGS__); \
+    typedef retnType(__thiscall *_##fnName_t)(uintptr_t, __VA_ARGS__); \
     const static uintptr_t address = ASLR(addr); \
-    _##fnName##_type fn = *(_##fnName##_type*)&address; \
+    _##fnName_t fn = *(_##fnName_t*)&address; \
     return fn((uintptr_t)this, t1, t2, t3, t4, t5); \
 }
 

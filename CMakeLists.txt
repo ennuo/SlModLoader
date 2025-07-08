@@ -33,6 +33,11 @@ target_precompile_headers(${CMAKE_PROJECT_NAME} PUBLIC
 
 if (MSVC)
 	add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+
+	# Need to disable iterator debugging or else some structures
+	# like the std::vector get additional padding that breaks
+	# game function calls / compatibility
+	add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
 endif()
 
 
@@ -56,6 +61,9 @@ add_subdirectory(sdk/DirectXTex)
 
 target_link_libraries(${CMAKE_PROJECT_NAME} minhook glm DirectXTex zlibstatic)
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME "dinput8")
+if (MSVC)
+	add_compile_options(/GR)
+endif()
 
 set(INSTALL_PATH "C:/Program Files (x86)/Steam/steamapps/common/Sonic & All-Stars Racing Transformed")
 
