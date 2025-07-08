@@ -279,8 +279,9 @@ public:
     inline static SlReloc<int> m_uiSelectedChar{0x00c51ba4};
     inline static SlReloc<bool> m_uiReloadChar{0x00c51bb8};
     inline static int m_PageIndex;
-    static const int kMaxPageSize = 25;
+    static const int kMaxPageSize = 30;
 public:
+    DEFINE_MEMBER_FN_1(TriggerFlash, void, 0x00848400, int player);
     DEFINE_MEMBER_FN_4(SetHighlighters, void, 0x0084e0c0, int a, bool b, bool c, bool d);
 public:
     void TouchMenu_AreaPressedImpl(int e)
@@ -319,6 +320,7 @@ public:
                 if (ch >= m_Page->size()) ch = m_Page->size() - 1;
                 (&m_uiReloadChar)[cFrontEndManager::m_MasterPlayerDevice] = true;
                 SetHighlighters(cFrontEndManager::m_MasterPlayerDevice, false, true, false);
+                TriggerFlash(cFrontEndManager::m_MasterPlayerDevice);
             }
         }
 
@@ -392,7 +394,7 @@ public:
             }
             else
             {
-                gSceneManager->SetNewTexture(info->CharSelectIconGlowHash "CHARACTER_SELECT\\CHAR_GLOW_%d", j);
+                gSceneManager->SetNewTexture(info->CharSelectIconGlowHash, "CHARACTER_SELECT\\CHAR_GLOW_%d", j);
                 gSceneManager->SetNewTexture(info->CharSelectIconHash, "CHARACTER_SELECT\\CHAR_STATE_%d", j);
             }
         
