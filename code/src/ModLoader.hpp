@@ -21,8 +21,7 @@ public:
 
     SlStringT<char> CharacterFile;
     SlStringT<char> FrontendCharacterFile;
-
-    SlStringT<char> RootFEEntity;
+    
     SlStringT<char> CarAnimationFilePrefix;
     SlStringT<char> BoatAnimationFilePrefix;
     SlStringT<char> PlaneAnimationFilePrefix;

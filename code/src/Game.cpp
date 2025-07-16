@@ -48,7 +48,7 @@ void SoftResetManager_DisablePolling()
 
 bool RacerInfo::IsMod() const
 {
-    return CustomRacerIndex >= 0;
+    return Ex->Mod != nullptr;
 }
 
 bool RacerInfo::IsModelSwap() const
@@ -60,6 +60,6 @@ bool RacerInfo::IsModelSwap() const
 SlCustomRacer* RacerInfo::GetCustomRacer() const
 {
     if (!IsMod()) return nullptr;
-    return gSlMod->Racers[CustomRacerIndex];
+    return Ex->Mod;
 }
 

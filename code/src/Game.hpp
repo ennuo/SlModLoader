@@ -12,11 +12,60 @@
 // sizeof: 0x360
 
 class SlCustomRacer;
+class RacerInfo;
+
+enum
+{
+    kModType_Default = 1,
+    kModType_LevelUp1 = 2,
+    kModType_LevelUp2 = 4,
+    kModType_LevelUp3 = 8,
+    kModType_LevelUp4 = 16,
+    kModType_LevelUp5 = 32,
+    kModType_Console = 64,
+    kModType_All = 127
+};
+
+class CachedRacerStats {
+public:
+    int DefaultMod;
+    int ChallengeMod;
+    int ConsoleMod;
+    int LevelUp1Mod;
+    int LevelUp2Mod;
+    int LevelUp3Mod;
+    int LevelUp4Mod;
+    int Acceleration;
+    int ModAcceleration;
+    int Speed;
+    int ModSpeed;
+    int Boost;
+    int ModBoost;
+    int AllStar;
+    int ModAllStar;
+    int Handling;
+    int ModHandling;
+};
+
+class RacerInfoEx {
+public:
+    RacerInfo* Info;
+    SlCustomRacer* Mod;
+    
+    int StatId;
+    int CachedStatGridIndex;
+
+    CachedRacerStats BaseStats;
+};
+
+
 class RacerInfo {
 public:
     bool IsMod() const;
     bool IsModelSwap() const;
     SlCustomRacer* GetCustomRacer() const;
+    void RestoreStats();
+    void CopyStats(int id);
 public:
     uint NameHash;
     char *DisplayName;
@@ -44,7 +93,7 @@ public:
     
     // Padding lets me slip this index in without
     // breaking anything
-    short CustomRacerIndex;
+    // short CustomRacerIndex;
 
     float SwitchVehicleDelay;
     float ShieldCarScale;
@@ -142,34 +191,35 @@ public:
     union
     {
         const char* RootFEEntity;
+        RacerInfoEx* Ex;
     };
-    undefined4 field119_0x1b8;
-    undefined4 field120_0x1bc;
-    undefined4 field121_0x1c0;
-    undefined4 field122_0x1c4;
-    undefined4 field123_0x1c8;
-    undefined4 field124_0x1cc;
-    undefined4 field125_0x1d0;
-    undefined4 field126_0x1d4;
-    undefined4 field127_0x1d8;
-    undefined4 field128_0x1dc;
-    undefined4 field129_0x1e0;
-    undefined4 field130_0x1e4;
-    undefined4 field131_0x1e8;
-    undefined4 field132_0x1ec;
-    undefined4 field133_0x1f0;
-    undefined4 field134_0x1f4;
-    undefined4 field135_0x1f8;
+    int DefaultMod;
+    int ChallengeMod;
+    int ConsoleMod;
+    int LevelUp1Mod;
+    int LevelUp2Mod;
+    int LevelUp3Mod;
+    int LevelUp4Mod;
+    int Acceleration;
+    int ModAcceleration;
+    int Speed;
+    int ModSpeed;
+    int Boost;
+    int ModBoost;
+    int AllStar;
+    int ModAllStar;
+    int Handling;
+    int ModHandling;
     bool Unlocked;
-    undefined field137_0x1fd;
-    bool field138_0x1fe;
-    undefined field139_0x1ff;
+    bool InitiallyUnlocked;
+    bool Played;
+    bool InitiallyPlayed;
     bool New;
-    undefined field141_0x201;
-    undefined field142_0x202;
-    undefined field143_0x203;
-    undefined4 field144_0x204;
-    undefined4 field145_0x208;
+    bool InitiallyNew;
+    // undefined field142_0x202;
+    // undefined field143_0x203;
+    int Level;
+    int InitialLevel;
     undefined field146_0x20c;
     undefined field147_0x20d;
     undefined field148_0x20e;
@@ -339,9 +389,9 @@ public:
     undefined4 field312_0x348;
     undefined4 field313_0x34c;
     undefined4 field314_0x350;
-    undefined4 field315_0x354;
-    undefined4 field316_0x358;
-    undefined4 field317_0x35c;
+    int MiniMapIcon_Car;
+    int MiniMapIcon_Boat;
+    int MiniMapIcon_Plane;
 };
 
 void SetupGameNatives();

@@ -26,14 +26,18 @@ public:
 class SceneManager {
 public:
     DEFINE_MEMBER_FN_2(SetNewTexture, void, 0x00493e40, int object, int texture);
+    DEFINE_MEMBER_FN_3(SetNewTextureWithScene, void, 0x00493e70, int object, int texture, int scene);
 private:
     DEFINE_MEMBER_FN_2(HideObjectInternal, void, 0x00493b60, int object, bool b);
     DEFINE_MEMBER_FN_2(ShowObjectInternal, void, 0x00493b10, int object, bool b);
+public:
+    void SetRacerIconTexture(int object, int buf, int scene);
 public:
     void SetNewTexture(int texture, const char* object, ...);
     void SetNewTexture(const char* texture, int hash);
     void SetNewTexture(const char* texture, const char* object, ...);
     void SetNewTexture(const SlStringT<char>& resource, int texture, const char* object, ...);
+    void SetNewTexture(const SlStringT<char>& resource, int texture, int object);
     void HideObject(const char* format, ...);
     void ShowObject(const char* format, ...);
 

@@ -13,6 +13,7 @@
 #include "Jenkins.hpp"
 #include "ModLoader.hpp"
 #include "Frontend.hpp"
+#include "Networking.hpp"
 
 #include <windows.h>
 #include <toml.hpp>
@@ -50,15 +51,6 @@ const int kHash_Locked = Hash("Locked");
     // se_anim_stream_${CharacterName}car|driveidle
     // ${CharacterMayaFile}.mb:se_entity_${CharacterEntity}.model
     // FeCharacters\\${CharacterName}_fe\\${CharacterName}_fe
-
-void PatchExecutableSection(void* address, void* data, int size)
-{
-    DWORD old_protect;
-    VirtualProtect(address, size, PAGE_EXECUTE_READWRITE, &old_protect);
-    memcpy(address, data, size);
-    VirtualProtect(address, size, old_protect, &old_protect);
-    FlushInstructionCache(GetCurrentProcess(), address, size);
-}
 
 uint8_t g_MaxRacers = 255;
 void PatchWeaponSetupManager()
@@ -106,6 +98,7 @@ public:
     DEFINE_MEMBER_FN_0(DisablePolling, void, 0x0069d500);
 };
 
+
 class GameDatabase {
 public:
     inline static int m_uNumBaseRacers;
@@ -113,6 +106,7 @@ public:
 
     inline static SlReloc<unsigned int> m_uNumRacers{0x00bd0318};
     inline static SlReloc<RacerInfo*> m_pRacerInfo{0x00bd0268};
+    inline static RacerInfoEx* m_pRacerInfoEx;
 public:
     inline static void (*GameDatabase_SetupRacerData)();
 
@@ -122,6 +116,45 @@ public:
         {
             RacerInfo* racer = m_pRacerInfo + i;
             if (racer->NameHash == hash)
+                return racer;
+        }
+
+        return nullptr;
+    }
+
+    static RacerInfo* GetRacerAppearanceFromNetworkID(RacerNetworkId id)
+    {
+        SumoNet::NetMatch* match = SumoNet::gNetManager->GetMatch();
+        if (match == nullptr || match->IsError()) return nullptr;
+        
+        const SumoNet::NetId& pid = id.GetPeerId();
+        int pnum = pid.GetUserNum();
+
+        SumoNet::NetMatchPeer* peer = match->GetPeer(pid);
+        if (peer == nullptr || peer->GetNumPlayers() < pnum) return nullptr;
+
+        auto player = peer->GetEx().GetPlayer(pnum);
+        if (player.mInitialised)
+            return GetRacer(player.mNameHash);
+        
+        return nullptr;
+    }
+
+    static RacerInfo* GetRacerFromNetworkID(RacerNetworkId id)
+    {
+        if (id.IsRandom()) return nullptr;
+
+        if (id.IsHuman())
+        {
+            RacerInfo* appearance = GetRacerAppearanceFromNetworkID(id);
+            if (appearance != nullptr)
+                return appearance;
+        }
+
+        for (int i = 0; i < m_uNumRacers; ++i)
+        {
+            RacerInfo* racer = m_pRacerInfo + i;
+            if (racer->Ex->StatId == id.GetCharacterId())
                 return racer;
         }
 
@@ -148,12 +181,15 @@ public:
         m_uNumRacers = m_uNumBaseRacers + m_uNumCustomRacers;
         *data = m_uNumRacers;
 
-        for (int i = 0; i < m_uNumBaseRacers; ++i)
+        m_pRacerInfoEx = new RacerInfoEx[m_uNumRacers];
+        memset(m_pRacerInfoEx, 0, sizeof(RacerInfoEx) * m_uNumRacers);
+
+        for (int i = 0; i < m_uNumRacers; ++i)
         {
-            m_pRacerInfo[i].CustomRacerIndex = -1;
-            m_pRacerInfo[i].RootFEEntity = nullptr;
+            m_pRacerInfo[i].Ex = m_pRacerInfoEx + i;
+            m_pRacerInfo[i].Ex->Info = m_pRacerInfo + i;
         }
-        
+
         int custom_racer_index = 0;
         for (const auto& racer : gSlMod->Racers)
         {
@@ -178,7 +214,9 @@ public:
             memcpy(custom, base_racer, sizeof(RacerInfo));
 
             custom->GridOrder = 512 + custom_racer_index;
-            custom->CustomRacerIndex = custom_racer_index++;
+
+            custom->Ex = m_pRacerInfoEx + m_uNumBaseRacers + custom_racer_index;
+            custom->Ex->Mod = gSlMod->Racers[custom_racer_index++];
             custom->NameHash = racer->NameHash;
             custom->DisplayName = racer->DisplayName;
             custom->CharacterName = racer->InternalId;
@@ -189,7 +227,7 @@ public:
             }
             custom->CharSelectIconHash = racer->SelectIconHash;
             custom->Unlocked = true;
-            custom->field137_0x1fd = true;
+            custom->InitiallyUnlocked = true;
             // custom->Parameter = racer->InternalId;
             custom->AvailableInFrontEnd = true;
             custom->AvailableOnPc = true;
@@ -199,7 +237,6 @@ public:
 
             if (!racer->IsModelSwap)
             {
-                custom->RootFEEntity = racer->RootFEEntity;
                 custom->CarAnimationFilePrefix = racer->CarAnimationFilePrefix;
                 custom->BoatAnimationFilePrefix = racer->BoatAnimationFilePrefix;
                 custom->PlaneAnimationFilePrefix = racer->PlaneAnimationFilePrefix;
@@ -208,8 +245,31 @@ public:
 
             custom++;
         }
+
+        for (int i = 0; i < m_uNumRacers; ++i)
+        {
+            RacerInfo& info = m_pRacerInfo[i];
+            info.Ex->StatId = info.NetworkId;
+            memcpy(&info.Ex->BaseStats, &info.DefaultMod, sizeof(CachedRacerStats));
+        }
     }
 };
+
+void RacerInfo::RestoreStats()
+{
+    NetworkId = Ex->StatId;
+    memcpy(&DefaultMod, &Ex->BaseStats, sizeof(CachedRacerStats));
+}
+
+void RacerInfo::CopyStats(int id)
+{
+    RacerInfo* racer = GameDatabase::GetRacer(id);
+    if (racer != nullptr)
+    {
+        // NetworkId = racer->Ex->StatId;
+        memcpy(&DefaultMod, &racer->Ex->BaseStats, sizeof(CachedRacerStats));
+    }
+}
 
 class PartyManager {
     DEFINE_MEMBER_FN_0(CountMemberNum, int, 0x0);
@@ -219,6 +279,7 @@ class PartyManager {
 class cCharacterSelectMulti;
 void(__thiscall *cCharacterSelectMulti_SetUpGrid)(void*);
 void (__thiscall *cCharacterSelectMulti_Update)(cCharacterSelectMulti*);
+void (__thiscall *cCharacterSelectMulti_PreUpdate)(cCharacterSelectMulti*);
 void (__thiscall *cCharacterSelectMulti_TouchMenu_AreaPressed)(cCharacterSelectMulti*, int);
 
 bool gLoadedResources;
@@ -229,6 +290,13 @@ bool DoesSumoResourceExist(const SlStringT<char>& path)
     SlStringT<char> filename = path;
     filename += ".cpu.spc";
     return gResourceManager->FileExists(filename);
+}
+
+void (*SumoNet_NetMatch_ReadPeerData)(void*, void*, void*);
+void ReadPeerData(void* match, void* peer, void* packet)
+{
+    LOG(" - Reading peer data!!!!!!");
+    SumoNet_NetMatch_ReadPeerData(match, peer, packet);
 }
 
 __declspec(naked) int MakeCharacterFilename(SlStringT<char> path, RacerInfo* info, SlStringT<char>& filename) noexcept
@@ -289,6 +357,26 @@ public:
         cCharacterSelectMulti_TouchMenu_AreaPressed(this, e);
     }
 
+    void PreUpdateImpl()
+    {
+        // When this class is constructed, the page variable is the original
+        // racers array, but it's more convenient to use that as a page variable
+        if (m_Racers.size() == 0) 
+        {
+            m_Racers = m_Page;
+            gSlMod->LoadFrontendAssets(&gResourceList);
+            gResourceList.StartLoadResources();
+        }
+
+        for (int i = 0; i < m_Racers.size(); ++i)
+        {
+            m_Racers[i]->RestoreStats();
+            m_Racers[i]->Ex->CachedStatGridIndex = i;
+        }
+
+        cCharacterSelectMulti_PreUpdate(this);
+    }
+
     void UpdateImpl()
     {
         for (int i = 0; i < (*SlInput::m_Gamepad).size(); ++i)
@@ -302,6 +390,7 @@ public:
                 SlKeyboard* keyboard = (*SlInput::m_Keyboard)[0];
                 if (keyboard->GetKeyPressed(kFocusChannel_Frontend, KEY_Q)) state |= 0x1000;
                 if (keyboard->GetKeyPressed(kFocusChannel_Frontend, KEY_E)) state |= 0x2000;
+                if (keyboard->GetKeyPressed(kFocusChannel_Frontend, KEY_V)) state |= 0x8000;
             }
 
 
@@ -319,6 +408,22 @@ public:
                 int& ch = (&m_uiSelectedChar)[cFrontEndManager::m_MasterPlayerDevice];
                 if (ch >= m_Page->size()) ch = m_Page->size() - 1;
                 (&m_uiReloadChar)[cFrontEndManager::m_MasterPlayerDevice] = true;
+                SetHighlighters(cFrontEndManager::m_MasterPlayerDevice, false, true, false);
+                TriggerFlash(cFrontEndManager::m_MasterPlayerDevice);
+            }
+
+            if (state & 0x8000)
+            {
+                int& ch = (&m_uiSelectedChar)[cFrontEndManager::m_MasterPlayerDevice];
+
+                RacerInfo* racer = m_Racers[(m_PageIndex * kMaxPageSize) + ch];
+
+                racer->Ex->CachedStatGridIndex++;
+                racer->Ex->CachedStatGridIndex %= m_Racers.size();
+
+                racer->CopyStats(m_Racers[racer->Ex->CachedStatGridIndex]->NameHash);
+
+                SetUpGrid();
                 SetHighlighters(cFrontEndManager::m_MasterPlayerDevice, false, true, false);
                 TriggerFlash(cFrontEndManager::m_MasterPlayerDevice);
             }
@@ -341,15 +446,6 @@ public:
 
     void SetUpGrid()
     {
-        // When this class is constructed, the page variable is the original
-        // racers array, but it's more convenient to use that as a page variable
-        if (m_Racers.size() == 0) 
-        {
-            m_Racers = m_Page;
-            gSlMod->LoadFrontendAssets(&gResourceList);
-            gResourceList.StartLoadResources();
-        }
-
         m_Page->clear();
 
         int start = m_PageIndex * kMaxPageSize;
@@ -357,11 +453,18 @@ public:
         m_PageSize = m_Racers.size() - start;
         if ((int)m_PageSize > kMaxPageSize) m_PageSize = kMaxPageSize;
 
+        // fix issue with random slots on startup
+        for (int i = 0; i < 4; ++i)
+        {
+            int& ch = (&m_uiSelectedChar)[i];
+            if (ch >= m_Page->size()) ch = m_Page->size();
+        }
+
+
         for (int i = start, j = 0; j < (int)m_PageSize; ++i, ++j)
         {
             RacerInfo* info = m_Racers[i];
-            int index = info - &GameDatabase::m_pRacerInfo[0];
-            bool isMaxLevel = info->ModsBits == 0x7f;
+            bool isMaxLevel = info->ModsBits == kModType_All;
 
             gSceneManager->ShowObject("CHARACTER_SELECT\\CHAR_%d_MOVE", j);
             gSceneManager->ShowObject("CHARACTER_SELECT\\CHAR_%d", j);
@@ -383,6 +486,21 @@ public:
             {
                 gSceneManager->SetNewTexture("Notification_ExclamationMark.tga", kHash_Notification);
                 gSceneManager->ShowObject(kHash_Notification);
+            }
+
+            RacerInfo* donor = m_Racers[info->Ex->CachedStatGridIndex];
+            if (donor != info)
+            {
+                gSceneManager->ShowObject(kHash_Notification);
+                if (donor->IsMod())
+                {
+                    SlCustomRacer* racer = donor->GetCustomRacer();
+                    gSceneManager->SetNewTexture(racer->FrontendResources, racer->SelectIconHash, "CHARACTER_SELECT\\MAXED_ICON_%d", j);
+                }
+                else 
+                {
+                    gSceneManager->SetNewTexture(kHash_Notification, donor->CharSelectIconHash);
+                }
             }
 
 
@@ -455,7 +573,7 @@ public:
                 else if (DoesSumoResourceExist(custom->CharacterFile))
                     CharacterResourcePath = custom->CharacterFile;
                 else
-                    CharacterResourcePath = "FeCharacters\\QuestionMarkWhite\\QuestionMarkWhite"; 
+                    CharacterResourcePath = "FeCharacters\\QuestionMarkHolo\\QuestionMarkHolo"; 
             }
             else
             {
@@ -540,14 +658,19 @@ void InitHooks()
     MH_Initialize();
 
 
+    CREATE_MEMBER_HOOK(0x006d94f0, GameDatabase::GetRacerFromNetworkID, nullptr);
+    CREATE_HOOK(0x00474ca0, ReadPeerData, &SumoNet_NetMatch_ReadPeerData);
     CREATE_MEMBER_HOOK(0x007bad80, VehicleModelProxy::Create, &VehicleModel_Create);
     CREATE_MEMBER_HOOK(0x00850d50, cCharacterSelectMulti::TouchMenu_AreaPressedImpl, &cCharacterSelectMulti_TouchMenu_AreaPressed);
+    CREATE_MEMBER_HOOK(0x0084f9e0, cCharacterSelectMulti::PreUpdateImpl, &cCharacterSelectMulti_PreUpdate);
     CREATE_MEMBER_HOOK(0x00851390, cCharacterSelectMulti::UpdateImpl, &cCharacterSelectMulti_Update);
     CREATE_MEMBER_HOOK(0x00848b90, cCharacterSelectMulti::SetUpGrid, &cCharacterSelectMulti_SetUpGrid);
     CREATE_MEMBER_HOOK(0x006dec10, GameDatabase::SetupRacerData, &GameDatabase::GameDatabase_SetupRacerData);
     CREATE_MEMBER_HOOK(0x008c7710, cCharacterLoader::PerformLoad, nullptr);
     CREATE_HOOK(0x496700, OnGetObjectDef, nullptr);
     CREATE_HOOK(0x0079a3c0, MakeCharacterFilename, nullptr);
+
+    Network_InstallHooks();
 
     // CREATE_MEMBER_HOOK(0x007564c0, InitStartup, nullptr);
 
@@ -888,7 +1011,6 @@ void InstallMod(const std::filesystem::path& moddir)
         racer->CharacterFile = SlStringT<char>(("mods\\" + dirname + "\\char\\" + racer->InternalId.m_Data).c_str());
         racer->FrontendCharacterFile = SlStringT<char>(("mods\\" + dirname + "\\char\\" + racer->InternalId.m_Data + "_fe").c_str());
 
-        racer->RootFEEntity = racer->InternalId + "_car";
         racer->CarAnimationFilePrefix = racer->InternalId + "_car_anims";
         racer->BoatAnimationFilePrefix = racer->InternalId + "_boat_anims";
         racer->PlaneAnimationFilePrefix = racer->InternalId + "_plane_anims";

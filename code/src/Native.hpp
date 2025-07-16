@@ -153,3 +153,5 @@ uintptr_t GetFnAddr(T src)
 
 	return data.u;
 }
+
+void PatchExecutableSection(void* address, void* data, int size);
