@@ -15,6 +15,43 @@ const uintptr_t kExecutableBase = 0x00400000;
 #define CREATE_HOOK(address, hook, original) MH_CreateHook((void*)ASLR(address), (void*)&hook, (void**)original);
 #define CREATE_MEMBER_HOOK(address, hook, original) MH_CreateHook((void*)ASLR(address), (void*)GetFnAddr(&hook), (void**)original);
 
+#define READ_EAX(name) __asm mov name, eax
+#define READ_ECX(name) __asm mov name, ecx
+#define READ_EDI(name) __asm mov name, edi
+
+#define WRITE_EAX(name) __asm mov eax, name
+
+
+#define INLINE_ASM_PROLOGUE __asm \
+{ \
+    __asm push ebp \
+    __asm mov ebp, esp \
+    __asm sub esp, __LOCAL_SIZE \
+    __asm push esi \
+    __asm push ebx \
+    __asm push edi \
+}
+
+#define INLINE_ASM_EPILOGUE __asm \
+{ \
+    __asm pop edi \
+    __asm pop ebx \
+    __asm pop esi \
+    __asm mov esp, ebp \
+    __asm pop ebp \
+    __asm ret \
+}
+
+#define INLINE_ASM_EPILOGUE_N(x) __asm \
+{ \
+    __asm pop edi \
+    __asm pop ebx \
+    __asm pop esi \
+    __asm mov esp, ebp \
+    __asm pop ebp \
+    __asm ret x \
+}
+    
 class SlPreInitGlobals {
 public:
     SlPreInitGlobals();
@@ -89,7 +126,7 @@ inline char* GetAddress(int address)
 
 #define DEFINE_MEMBER_FN_0(fnName, retnType, addr) \
     INLINE_ALWAYS retnType fnName() { \
-    typedef retnType(*_##fnName_t)(uintptr_t); \
+    typedef retnType(__thiscall *_##fnName_t)(uintptr_t); \
     const static uintptr_t address = ASLR(addr); \
     _##fnName_t fn = *(_##fnName_t*)&address; \
     return fn((uintptr_t)this); \

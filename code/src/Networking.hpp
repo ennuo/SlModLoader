@@ -22,6 +22,36 @@ enum EPeerDataSubType
 
 namespace SumoNet
 {
+    class NetInPacket {
+    public:
+        int Peek(int bits);
+        inline int Read(int bits)
+        {
+            int value = Peek(bits);
+            mPosition += bits;
+            return value;
+        }
+    private:
+        int mDummy0;
+        int mDummy1;
+        int mPosition;
+        unsigned char* mData;
+    };
+
+    class NetOutPacket {
+    public:
+        virtual ~NetOutPacket() = 0;
+        virtual void Write(unsigned int data, int bits) = 0;
+    public:
+        inline void Write(unsigned int data) { Write(data, 32); }
+        inline void WriteBool(bool data) { Write(data, 1); }
+        inline void WriteBytes(unsigned char const* data, int len)
+        {
+            for (int i = 0; i < len; ++i)
+                Write(data[i], 8);
+        }
+    };
+
     class NetAddr {
     public:
         inline NetAddr() { Clear(); }
@@ -98,11 +128,12 @@ namespace SumoNet
         char mPad2[0x134];
     };
 
-    class NetMatchPeerEx {
     struct NetMatchPlayerEx {
         bool mInitialised;
         int mNameHash;
     };
+
+    class NetMatchPeerEx {
     public:
         inline NetMatchPeerEx() { Clear(); }
     public:
@@ -120,6 +151,7 @@ namespace SumoNet
         inline int GetNumPlayers() const { return mNumPlayers; }
         inline NetMatchPlayer& GetPlayer(int i) { return mPlayers[i]; }
         NetMatchPeerEx& GetEx();
+        void PeerDataChanged(EPeerDataType type);
     public:
         void SetPlayerCharacter(int num, RacerInfo const& pc);
         void reset();

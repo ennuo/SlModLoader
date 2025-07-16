@@ -5,13 +5,22 @@
 
 namespace SumoNet
 {
+    int NetInPacket::Peek(int bits)
+    {
+        unsigned int value;
+        typedef void (*Delegate)(unsigned int*, int, unsigned char*);
+        const static uintptr_t address = ASLR(0x00474e70);
+
+        int v = mPosition + mDummy0;
+        __asm mov ecx, v
+        (*(Delegate*)&address)(&value, bits, mData);
+    }
+
     void NetMatch::SetLocalCharacter(int player, const RacerInfo& info)
     {
         if (!IsRunning()) return;
 
         int pad = GetLocals().GetPadIndex(player);
-        NetCharacter ch(info.Ex->StatId);
-
         GetLocals().SetCharacter(pad, info);
         GetMyPeer()->SetPlayerCharacter(player, info);
     }
@@ -22,20 +31,32 @@ namespace SumoNet
             mPlayerCharacter = pc;
     }
 
+    // in debug mode runtime stack checks store the parameter in esi
+    // so thats just going to break this function
+    #pragma runtime_checks("s", off)
+    void NetMatchPeer::PeerDataChanged(EPeerDataType type)
+    {
+        typedef void (__fastcall *Delegate)(NetMatchPeer*, EPeerDataType);
+        const static uintptr_t address = ASLR(0x00476a60);
+        uintptr_t self = (uintptr_t)this;
+        __asm mov esi, self
+        (*(Delegate*)&address)(nullptr, type);
+    }
+    #pragma runtime_checks("s", restore)
+
     void NetMatchPeer::SetPlayerCharacter(int num, const RacerInfo& info)
     {
         NetCharacter pc(info.Ex->StatId);
         NetMatchPlayer& player = mPlayers[num];
-        bool change = !player.is_character() || player.get_character() != pc;
 
         player.set_character(pc);
         GetEx().GetPlayer(num).mInitialised = true;
         GetEx().GetPlayer(num).mNameHash = info.NameHash;
 
-        LOG("Setting character stat_id=%02x, racer_hash=%08x, racer_name=%s", info.Ex->StatId, info.NameHash, info.DisplayName);
+        LOG("Setting character peer_id=%04x, stat_id=%02x, racer_hash=%08x, racer_name=%s", (unsigned short)GetId(), info.Ex->StatId, info.NameHash, info.DisplayName);
 
-        // if (change)
-        //     PeerDataChanged(kPeerDataType_Characters);
+        PeerDataChanged(kPeerDataType_Characters);
+        PeerDataChanged((EPeerDataType)(kPeerDataType_Extended | kPeerDataSubType_Vanity << 8));
     }
 
     bool NetLocals::SetCharacter(int pad, const RacerInfo& ch)
@@ -66,6 +87,108 @@ namespace SumoNet
 }
 
 using namespace SumoNet;
+
+// Stack check will fail on this function because
+// the stack pointer gets cached after I manually push the arguments
+// for the functions, oops!
+#pragma runtime_checks("s", off)
+void (*SumoNet_NetMatchPeer_WritePeerData)();
+void (*SumoNet_NetMatchPeer_ReadPeerData)();
+
+__declspec(naked) void Network_OnReadPeerData(NetMatchPeer* peer)
+{
+    INLINE_ASM_PROLOGUE
+    NetInPacket* packet;
+    READ_EAX(packet);
+
+    if (packet != nullptr)
+    {
+        if (packet->Peek(4) == kPeerDataType_Extended && packet->Read(4))
+        {
+            LOG("Reading extended packet data...");
+
+            switch (packet->Read(24))
+            {
+                case kPeerDataSubType_Vanity:
+                {
+                    LOG(" - Reading vanity packet...");
+                    for (int i = 0; i < peer->GetNumPlayers(); ++i)
+                    {
+                        NetMatchPlayerEx& ex = peer->GetEx().GetPlayer(i);
+                        ex.mInitialised = packet->Read(1);
+                        if (ex.mInitialised)
+                            ex.mNameHash = packet->Read(32);
+                    }
+
+                    break;
+                }
+            }
+        }
+        else
+        {
+            LOG("Reading base packet data...");
+            
+            __asm mov eax, peer
+            __asm push eax
+            __asm mov eax, packet
+
+            SumoNet_NetMatchPeer_ReadPeerData();
+        }
+    }
+
+    INLINE_ASM_EPILOGUE_N(4)
+}
+
+__declspec(naked) void Network_OnWritePeerData(NetMatchPeer* peer, int type)
+{
+    INLINE_ASM_PROLOGUE
+    NetOutPacket* packet;
+    READ_EAX(packet);
+
+    if (packet != nullptr)
+    {
+        EPeerDataType main = (EPeerDataType)(type & 0xff);
+        EPeerDataSubType secondary = (EPeerDataSubType)(type >> 8);
+
+        LOG("Writing peer data of type %08x", main);
+        if (main == kPeerDataType_Extended)
+        {
+            LOG("- Extended packet data of type: %06x", secondary);
+            packet->Write(main, 4);
+            packet->Write(secondary, 24);
+
+            switch (secondary)
+            {
+                case kPeerDataSubType_Vanity:
+                {
+                    for (int i = 0; i < peer->GetNumPlayers(); ++i)
+                    {
+                        NetMatchPlayerEx ex = peer->GetEx().GetPlayer(i);
+                        packet->WriteBool(ex.mInitialised);
+                        if (ex.mInitialised)
+                            packet->Write(ex.mNameHash);
+                    }
+
+                    break;
+                }
+            }
+        }
+        else
+        {
+
+            __asm mov eax, main
+            __asm push eax
+            __asm mov eax, peer
+            __asm push eax
+            __asm mov eax, packet
+            
+            SumoNet_NetMatchPeer_WritePeerData();
+        }
+    }
+
+    INLINE_ASM_EPILOGUE_N(8);
+}
+#pragma runtime_checks("s", restore)
 
 void (__fastcall *SumoNet_NetMatchPeer_reset)();
 void __fastcall Network_OnPeerReset(NetMatchPeer* peer)
@@ -154,6 +277,8 @@ void Network_InstallHooks()
     CREATE_HOOK(0x007004e0, Network_GetCharacter, nullptr);
     CREATE_HOOK(0x00700f30, Network_LobbyGetCharacter, nullptr);
     CREATE_HOOK(0x004760a0, Network_OnPeerReset, &SumoNet_NetMatchPeer_reset);
+    CREATE_HOOK(0x00476af0, Network_OnWritePeerData, &SumoNet_NetMatchPeer_WritePeerData);
+    CREATE_HOOK(0x00476df0, Network_OnReadPeerData, &SumoNet_NetMatchPeer_ReadPeerData);
 
     // Patch all calls to Network_RequestLocalCharacter to
     // pass the pointer to RacerInfo instead of reading the network id member.

@@ -142,6 +142,8 @@ public:
 
     static RacerInfo* GetRacerFromNetworkID(RacerNetworkId id)
     {
+        // LOG("GetRacerFromNetworkID: char=%02x, peer=%04x, user_num=%d", id.GetCharacterId(), (unsigned short)id.GetPeerId(), id.GetPeerId().GetUserNum());
+
         if (id.IsRandom()) return nullptr;
 
         if (id.IsHuman())
@@ -292,50 +294,33 @@ bool DoesSumoResourceExist(const SlStringT<char>& path)
     return gResourceManager->FileExists(filename);
 }
 
-void (*SumoNet_NetMatch_ReadPeerData)(void*, void*, void*);
-void ReadPeerData(void* match, void* peer, void* packet)
-{
-    LOG(" - Reading peer data!!!!!!");
-    SumoNet_NetMatch_ReadPeerData(match, peer, packet);
-}
-
 __declspec(naked) int MakeCharacterFilename(SlStringT<char> path, RacerInfo* info, SlStringT<char>& filename) noexcept
 {
-    __asm {
-        push ebp
-        mov ebp, esp
-        sub esp, __LOCAL_SIZE
-
-        mov filename, ecx
-    }
+    INLINE_ASM_PROLOGUE
+    READ_ECX(filename);
 
     int status;
+    if (info->IsMod())
     {
-        if (info->IsMod())
-        {
-            filename = info->GetCustomRacer()->CharacterFile;
-        }
-        else
-        {
-            filename = path;
-            filename += info->CharacterName;
-            filename += "\\";
-            filename += info->CharacterName;
-        }
+        filename = info->GetCustomRacer()->CharacterFile;
+    }
+    else
+    {
+        filename = path;
+        filename += info->CharacterName;
+        filename += "\\";
+        filename += info->CharacterName;
+    }
 
-        LOG("- %s", filename.m_Data);
-
+    LOG("- %s", filename.m_Data);
+    {
         SlStringT<char> resource = filename;
         resource += ".cpu.spc";
         status = gResourceManager->FileExists(resource);
     }
 
-    __asm {
-        mov eax, status
-        mov esp, ebp
-        pop ebp
-        ret
-    }
+    WRITE_EAX(status);
+    INLINE_ASM_EPILOGUE
 }
 
 class cCharacterSelectMulti : public cFrontendScene {
@@ -612,27 +597,14 @@ public:
 // there's a standard calling convention for this? So we'll have to use a naked function definition.
 __declspec(naked) Siff::Object::TableEntry* __fastcall OnGetObjectDef(SiffObjectDefManager* manager, unsigned int hash)
 {
-    __asm {
-        push ebp
-        mov ebp, esp
-        sub esp, __LOCAL_SIZE
-
-        mov manager, ecx
-        mov hash, edi
-    }
-    
+    INLINE_ASM_PROLOGUE
+    READ_ECX(manager);
+    READ_EDI(hash);
     {
         auto entry = manager->GetObjectDef(hash);
-        __asm {
-            mov eax, entry
-        }
+        WRITE_EAX(entry);
     }
-
-    __asm {
-        mov esp, ebp
-        pop ebp
-        ret
-    }
+    INLINE_ASM_EPILOGUE
 }
 
 void (__thiscall *VehicleModel_Create)(void*, void*, int, void*, void*, void*, RacerInfo*);
@@ -659,7 +631,6 @@ void InitHooks()
 
 
     CREATE_MEMBER_HOOK(0x006d94f0, GameDatabase::GetRacerFromNetworkID, nullptr);
-    CREATE_HOOK(0x00474ca0, ReadPeerData, &SumoNet_NetMatch_ReadPeerData);
     CREATE_MEMBER_HOOK(0x007bad80, VehicleModelProxy::Create, &VehicleModel_Create);
     CREATE_MEMBER_HOOK(0x00850d50, cCharacterSelectMulti::TouchMenu_AreaPressedImpl, &cCharacterSelectMulti_TouchMenu_AreaPressed);
     CREATE_MEMBER_HOOK(0x0084f9e0, cCharacterSelectMulti::PreUpdateImpl, &cCharacterSelectMulti_PreUpdate);
@@ -667,7 +638,7 @@ void InitHooks()
     CREATE_MEMBER_HOOK(0x00848b90, cCharacterSelectMulti::SetUpGrid, &cCharacterSelectMulti_SetUpGrid);
     CREATE_MEMBER_HOOK(0x006dec10, GameDatabase::SetupRacerData, &GameDatabase::GameDatabase_SetupRacerData);
     CREATE_MEMBER_HOOK(0x008c7710, cCharacterLoader::PerformLoad, nullptr);
-    CREATE_HOOK(0x496700, OnGetObjectDef, nullptr);
+    // CREATE_HOOK(0x496700, OnGetObjectDef, nullptr);
     CREATE_HOOK(0x0079a3c0, MakeCharacterFilename, nullptr);
 
     Network_InstallHooks();

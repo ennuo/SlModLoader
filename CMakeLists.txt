@@ -61,9 +61,6 @@ add_subdirectory(sdk/DirectXTex)
 
 target_link_libraries(${CMAKE_PROJECT_NAME} minhook glm DirectXTex zlibstatic)
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME "dinput8")
-if (MSVC)
-	add_compile_options(/GR)
-endif()
 
 set(INSTALL_PATH "C:/Program Files (x86)/Steam/steamapps/common/Sonic & All-Stars Racing Transformed")
 
