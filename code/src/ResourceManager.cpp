@@ -17,7 +17,7 @@ void ResourceList::StartLoadResources()
         gResourceManager->LoadResource(file.Path, file.Type, file.A);
 }
 
-bool ResourceList::IsLoaded()
+bool ResourceList::IsLoaded() const
 {
     if (m_GameFiles == nullptr) return true;
     for (const auto& file : *m_GameFiles)

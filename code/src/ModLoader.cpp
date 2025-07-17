@@ -273,19 +273,11 @@ void RacerInfo::CopyStats(int id)
     }
 }
 
-class PartyManager {
-    DEFINE_MEMBER_FN_0(CountMemberNum, int, 0x0);
-    DEFINE_MEMBER_FN_1(GetPadIndexByCount, int, 0x0, int player);
-};
-
 class cCharacterSelectMulti;
 void(__thiscall *cCharacterSelectMulti_SetUpGrid)(void*);
 void (__thiscall *cCharacterSelectMulti_Update)(cCharacterSelectMulti*);
 void (__thiscall *cCharacterSelectMulti_PreUpdate)(cCharacterSelectMulti*);
 void (__thiscall *cCharacterSelectMulti_TouchMenu_AreaPressed)(cCharacterSelectMulti*, int);
-
-bool gLoadedResources;
-ResourceList gResourceList;
 
 bool DoesSumoResourceExist(const SlStringT<char>& path)
 {
@@ -347,11 +339,7 @@ public:
         // When this class is constructed, the page variable is the original
         // racers array, but it's more convenient to use that as a page variable
         if (m_Racers.size() == 0) 
-        {
             m_Racers = m_Page;
-            gSlMod->LoadFrontendAssets(&gResourceList);
-            gResourceList.StartLoadResources();
-        }
 
         for (int i = 0; i < m_Racers.size(); ++i)
         {
@@ -593,6 +581,36 @@ public:
     int RequestedCharacterHash;
 };
 
+namespace GameDataLoader
+{
+    static void (*LoadGameResources)();
+    static void (*UnloadGameResources)();
+}
+
+void (__thiscall *c3dManager_LoadFrontendAssets)(c3dManager*, ResourceList*);
+void c3dManager::LoadFrontendAssets(ResourceList* list)
+{
+    c3dManager_LoadFrontendAssets(this, list);
+}
+
+void __fastcall OnLoadFrontendAssets(c3dManager* manager, int, ResourceList* list)
+{
+    gSlMod->SetTextureSetEnabled(kTextureSet_CharacterSelect, true);
+    manager->LoadFrontendAssets(list);
+}
+
+void OnLoadGameResources()
+{
+    gSlMod->SetTextureSetEnabled(kTextureSet_CharacterSelect, false);
+    GameDataLoader::LoadGameResources();
+}
+
+void OnUnloadGameResources()
+{
+
+    GameDataLoader::UnloadGameResources();
+}
+
 // This function call seems to have been optimized, so the second argument gets passed into EDI, I don't think
 // there's a standard calling convention for this? So we'll have to use a naked function definition.
 __declspec(naked) Siff::Object::TableEntry* __fastcall OnGetObjectDef(SiffObjectDefManager* manager, unsigned int hash)
@@ -641,6 +659,9 @@ void InitHooks()
     // CREATE_HOOK(0x496700, OnGetObjectDef, nullptr);
     CREATE_HOOK(0x0079a3c0, MakeCharacterFilename, nullptr);
 
+    CREATE_HOOK(0x0072d090, OnLoadGameResources, &GameDataLoader::LoadGameResources);
+    CREATE_HOOK(0x00741b80, OnLoadFrontendAssets, &c3dManager_LoadFrontendAssets);
+    
     Network_InstallHooks();
 
     // CREATE_MEMBER_HOOK(0x007564c0, InitStartup, nullptr);
@@ -1021,6 +1042,81 @@ void SlModManager::LoadFrontendAssets(ResourceList* resources)
     }
 }
 
+void SlModManager::SetupRacerTextureSets()
+{
+    std::vector<SlStringT<char>> files;
+    for (const auto& racer : Racers)
+        files.push_back(racer->FrontendResources);
+    MakeTextureSet(kTextureSet_CharacterSelect, files);
+}
+
+void SlModManager::SetTextureSetEnabled(const char* name, bool enable)
+{
+    SlGlobalTextureSet* set = GetTextureSet(name);
+    if (set == nullptr || set->IsEnabled() == enable) return;
+    if (enable) set->Enable();
+    else set->Disable();
+
+    LOG("Texture Set %s has been %s", name, enable ? "enabled" : "disabled");
+
+}
+
+SlGlobalTextureSet* SlModManager::GetTextureSet(const char* name)
+{
+    int hash = Hash(name);
+    for (const auto& set : TextureSets)
+    {
+        if (set->GetName() == hash)
+            return set;
+    }
+
+    return nullptr;
+}
+
+void SlModManager::DestroyTextureSet(const char* name)
+{
+    SlGlobalTextureSet* set = GetTextureSet(name);
+    if (set != nullptr)
+    {
+        auto it = std::find(TextureSets.begin(), TextureSets.end(), set);
+        TextureSets.erase(it);
+
+        delete set;
+    }
+}
+
+void SlModManager::MakeTextureSet(const char* name, const std::vector<SlStringT<char>>& files)
+{
+    DestroyTextureSet(name);
+    SlGlobalTextureSet* set = new SlGlobalTextureSet(name, files);
+    TextureSets.push_back(set);
+    LOG("Texture set %s has been created", name);
+}
+
+SlGlobalTextureSet::SlGlobalTextureSet(const char* name, const std::vector<SlStringT<char>>& files) : Name(Hash(name)), Files(files), Resources(), Priority(), Enabled() {}
+
+void SlGlobalTextureSet::Disable()
+{
+    if (!Enabled) return;
+
+    Resources.UnloadResources();
+
+    Enabled = false;
+    Linked = false;
+}
+
+void SlGlobalTextureSet::Enable()
+{
+    if (Enabled) return;
+
+    for (const auto& file : Files)
+        Resources.AddResource(file, kResourceType_SumoTool, false);
+    Resources.StartLoadResources();
+
+    Linked = false;
+    Enabled = true;
+}
+
 void ClvMain()
 {
     gSlMod = new SlModManager();
@@ -1038,6 +1134,8 @@ void ClvMain()
         if (!std::filesystem::is_directory(moddir)) continue;
         InstallMod(moddir);
     }
+
+    gSlMod->SetupRacerTextureSets();
 
     SetupGameNatives();
     PatchWeaponSetupManager();

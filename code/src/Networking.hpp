@@ -2,6 +2,8 @@
 
 class RacerInfo;
 
+inline const u32 kCustomNetVersion = 1;
+
 enum EPeerDataType
 {   
     kPeerDataType_Players = 0x1,
@@ -17,6 +19,7 @@ enum EPeerDataType
 
 enum EPeerDataSubType
 {
+    kPeerDataSubType_Info,
     kPeerDataSubType_Vanity
 };
 

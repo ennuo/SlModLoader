@@ -97,7 +97,8 @@ private:
 
 class c3dManager {
 public:
-    DEFINE_MEMBER_FN_1(LoadFrontendAssets, void, 0x00741b80, ResourceList* list);
+    void LoadFrontendAssets(ResourceList* list);
+    // DEFINE_MEMBER_FN_1(LoadFrontendAssets, void, 0x00741b80, ResourceList* list);
 };
 
 class cFrontEndManager {

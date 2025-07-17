@@ -49,7 +49,7 @@ class ResourceList {
 public:
     ~ResourceList();
 public:
-    bool IsLoaded();
+    bool IsLoaded() const;
     int GetSize();
     void UnloadResources();
     void StartLoadResources();
