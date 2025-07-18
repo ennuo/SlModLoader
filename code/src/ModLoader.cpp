@@ -228,6 +228,7 @@ public:
                 custom->CharacterEntity = racer->InternalId;
             }
             custom->CharSelectIconHash = racer->SelectIconHash;
+            custom->CharSelectBigIconHash = racer->VersusPortraitHash;
             custom->Unlocked = true;
             custom->InitiallyUnlocked = true;
             // custom->Parameter = racer->InternalId;
@@ -245,6 +246,12 @@ public:
                 custom->TransformAnimationFilePrefix = racer->TransformAnimationFilePrefix;
             }
 
+            custom->MiniMapIcon_Car = racer->MinimapIconHash;
+            custom->MiniMapIcon_Boat = racer->MinimapIconHash;
+            custom->MiniMapIcon_Plane = racer->MinimapIconHash;
+
+            custom->ImageUnlockHash = racer->RaceResultsHash;
+            
             custom++;
         }
 
@@ -602,12 +609,23 @@ void __fastcall OnLoadFrontendAssets(c3dManager* manager, int, ResourceList* lis
 void OnLoadGameResources()
 {
     gSlMod->SetTextureSetEnabled(kTextureSet_CharacterSelect, false);
+
+    std::vector<SlStringT<char>> files;
+    for (const auto& racer : gSlMod->Racers)
+    {
+        files.push_back(racer->GameResources);
+        files.push_back(racer->FrontendResources);
+    }
+
+    gSlMod->MakeTextureSet(kTextureSet_Race, files);
+    gSlMod->SetTextureSetEnabled(kTextureSet_Race, true);
+
     GameDataLoader::LoadGameResources();
 }
 
 void OnUnloadGameResources()
 {
-
+    gSlMod->DestroyTextureSet(kTextureSet_Race);
     GameDataLoader::UnloadGameResources();
 }
 
@@ -661,7 +679,10 @@ void InitHooks()
 
     CREATE_HOOK(0x0072d090, OnLoadGameResources, &GameDataLoader::LoadGameResources);
     CREATE_HOOK(0x00741b80, OnLoadFrontendAssets, &c3dManager_LoadFrontendAssets);
-    
+
+    CREATE_MEMBER_HOOK(0x00493e40, SceneManager::__hook_SetNewTexture, nullptr);
+    CREATE_MEMBER_HOOK(0x00493e70, SceneManager::__hook_scene_SetNewTexture, nullptr);
+
     Network_InstallHooks();
 
     // CREATE_MEMBER_HOOK(0x007564c0, InitStartup, nullptr);
@@ -1080,8 +1101,9 @@ void SlModManager::DestroyTextureSet(const char* name)
     {
         auto it = std::find(TextureSets.begin(), TextureSets.end(), set);
         TextureSets.erase(it);
-
         delete set;
+        
+        LOG("Texture set %s has been destroyed", name);
     }
 }
 
@@ -1091,6 +1113,30 @@ void SlModManager::MakeTextureSet(const char* name, const std::vector<SlStringT<
     SlGlobalTextureSet* set = new SlGlobalTextureSet(name, files);
     TextureSets.push_back(set);
     LOG("Texture set %s has been created", name);
+}
+
+bool SlModManager::OverrideTexture(int& texture, SiffLoadSet*& siff)
+{
+    for (const auto& set : TextureSets)
+    {
+        if (set->IsDisabled()) continue;
+        for (const auto& file : set->GetFiles())
+        {
+            SiffLoadSet** handle = (SiffLoadSet**)gResourceManager->GetResource(file);
+            if (siff == nullptr) continue;
+            SiffLoadSet* ssiff = *handle;
+            if (ssiff == nullptr) continue;
+
+            if (ssiff->m_TextureManager.GetTexture1(texture) != nullptr)
+            {
+                // LOG("- Overwriting %08x with load set %s", texture, file.m_Data);
+                siff = ssiff;
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 SlGlobalTextureSet::SlGlobalTextureSet(const char* name, const std::vector<SlStringT<char>>& files) : Name(Hash(name)), Files(files), Resources(), Priority(), Enabled() {}

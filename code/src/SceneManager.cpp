@@ -8,6 +8,48 @@
 
 #include <Windows.h>
 
+bool CTextureObject::SetNewTexture(int hash, SiffLoadSet const* siff)
+{
+    const static uintptr_t address = ASLR(0x00495f90);
+    __asm
+    {
+        mov esi, hash
+        mov edi, siff
+        push this
+        call [address]
+    }
+}
+
+bool SceneManager::SetNewTexture(int object, int texture)
+{
+    SiffLoadSet* set;
+    if (gSlMod->OverrideTexture(texture, set))
+        return SetNewTexture(object, texture, set);
+
+    CTextureObject* obj = gObjectManager->GetTextureObject(object);
+    if (obj == nullptr) return false;
+    return obj->SetNewTexture(texture);
+}
+
+bool SceneManager::SetNewTexture(int object, int texture, int scene)
+{
+    SiffLoadSet* set;
+    if (gSlMod->OverrideTexture(texture, set))
+        return SetNewTexture(object, texture, set);
+    
+    CTextureObject* obj = gObjectManager->GetTextureObject(object);
+    CSceneEntry* entry = m_sceneTree.Find(scene);
+    if (obj == nullptr || entry == nullptr) return false;
+    return obj->SetNewTexture(texture, entry->m_pLoadSet);
+}
+
+bool SceneManager::SetNewTexture(int object, int texture, SiffLoadSet const* siff)
+{
+    CTextureObject* obj = gObjectManager->GetTextureObject(object);
+    if (obj == nullptr) return false;
+    return obj->SetNewTexture(texture, siff);
+}
+
 void SceneManager::HideObject(const char* format, ...)
 {
     va_list args;
@@ -60,17 +102,7 @@ void SceneManager::SetNewTexture(const SlStringT<char>& resource, int texture, i
 {
     SiffLoadSet** siff = (SiffLoadSet**)gResourceManager->GetResource(resource);
     if (siff == nullptr || *siff == nullptr) return;
-
-    CTextureObject* obj = gObjectManager->GetTextureObject(object);
-    if (obj == nullptr) return;
-
-    // dumb hack to get around the fact im lazy
-    // temporarily set the siff load set of the object
-    // to our own.
-    SiffLoadSet* b = obj->m_pLoadSet;
-    obj->m_pLoadSet = *siff;
-    SetNewTexture(object, texture);
-    obj->m_pLoadSet = b;
+    SetNewTexture(object, texture, *siff);
 }
 
 void SceneManager::SetNewTexture(const SlStringT<char>& resource, int texture, const char* object, ...)
@@ -84,18 +116,7 @@ void SceneManager::SetNewTexture(const SlStringT<char>& resource, int texture, c
     vsnprintf(buf, 256, object, args);
     va_end(args);
 
-    int hash = Hash(buf);
-
-    CTextureObject* obj = gObjectManager->GetTextureObject(hash);
-    if (obj == nullptr) return;
-
-    // dumb hack to get around the fact im lazy
-    // temporarily set the siff load set of the object
-    // to our own.
-    SiffLoadSet* b = obj->m_pLoadSet;
-    obj->m_pLoadSet = *siff;
-    SetNewTexture(hash, texture);
-    obj->m_pLoadSet = b;
+    SetNewTexture(Hash(buf), texture, *siff);
 }
 
 void SceneManager::SetRacerIconTexture(int object, int buf, int scene)
@@ -104,7 +125,7 @@ void SceneManager::SetRacerIconTexture(int object, int buf, int scene)
     const int kHash_RandomIcon = Hash("Random_IconSmall.tga");
     if (buf == kHash_RandomIcon)
     {
-        SetNewTextureWithScene(object, kHash_RandomIcon, scene);
+        SetNewTexture(object, kHash_RandomIcon, scene);
         return;
     }
 

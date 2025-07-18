@@ -19,8 +19,9 @@ enum EPeerDataType
 
 enum EPeerDataSubType
 {
-    kPeerDataSubType_Info,
-    kPeerDataSubType_Vanity
+    kPeerDataSubType_GameInfo,
+    kPeerDataSubType_RacerAppearance,
+    kPeerDataSubType_VanityEffects
 };
 
 namespace SumoNet

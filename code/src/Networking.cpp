@@ -56,7 +56,7 @@ namespace SumoNet
         LOG("Setting character peer_id=%04x, stat_id=%02x, racer_hash=%08x, racer_name=%s", (unsigned short)GetId(), info.Ex->StatId, info.NameHash, info.DisplayName);
 
         PeerDataChanged(kPeerDataType_Characters);
-        PeerDataChanged((EPeerDataType)(kPeerDataType_Extended | kPeerDataSubType_Vanity << 8));
+        PeerDataChanged((EPeerDataType)(kPeerDataType_Extended | kPeerDataSubType_RacerAppearance << 8));
     }
 
     bool NetLocals::SetCharacter(int pad, const RacerInfo& ch)
@@ -109,9 +109,9 @@ __declspec(naked) void Network_OnReadPeerData(NetMatchPeer* peer)
 
             switch (packet->Read(24))
             {
-                case kPeerDataSubType_Vanity:
+                case kPeerDataSubType_RacerAppearance:
                 {
-                    LOG(" - Reading vanity packet...");
+                    LOG(" - Reading racer appearance packet...");
                     for (int i = 0; i < peer->GetNumPlayers(); ++i)
                     {
                         NetMatchPlayerEx& ex = peer->GetEx().GetPlayer(i);
@@ -159,7 +159,7 @@ __declspec(naked) void Network_OnWritePeerData(NetMatchPeer* peer, int type)
 
             switch (secondary)
             {
-                case kPeerDataSubType_Vanity:
+                case kPeerDataSubType_RacerAppearance:
                 {
                     for (int i = 0; i < peer->GetNumPlayers(); ++i)
                     {

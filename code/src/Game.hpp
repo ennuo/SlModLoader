@@ -180,14 +180,14 @@ public:
     undefined4 field107_0x188;
     int CharSelectIconHash;
     undefined4 CharSelectIconGlowHash;
-    undefined4 field110_0x194;
+    undefined4 CharSelectBigIconHash;
     undefined4 GridOrder;
     undefined4 field112_0x19c;
     undefined4 field113_0x1a0;
     undefined4 field114_0x1a4;
     undefined4 field115_0x1a8;
-    undefined4 field116_0x1ac;
-    undefined4 field117_0x1b0;
+    int ImageUnlockHash;
+    int ImageListHash;
     union
     {
         const char* RootFEEntity;

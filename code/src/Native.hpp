@@ -18,9 +18,17 @@ const uintptr_t kExecutableBase = 0x00400000;
 #define READ_EAX(name) __asm mov name, eax
 #define READ_ECX(name) __asm mov name, ecx
 #define READ_EDI(name) __asm mov name, edi
+#define READ_ESI(name) __asm mov name, esi
 
 #define WRITE_EAX(name) __asm mov eax, name
+#define WRITE_ECX(name) __asm mov ecx, name
+#define WRITE_EDI(name) __asm mov edi, name
+#define WRITE_ESI(name) __asm mov esi, name
 
+#define PUSH_REGISTER(name) __asm push name
+#define POP_REGISTER(name) __asm pop name
+
+#define RETURN_POP(n) __asm ret n
 
 #define INLINE_ASM_PROLOGUE __asm \
 { \

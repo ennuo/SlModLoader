@@ -7,7 +7,7 @@
 #include "ResourceManager.hpp"
 #include "Sl/Plugins/Interfaces.hpp"
 
-inline const char* kTextureSet_MiniMapIcons = "Dynamic Minimap Resources";
+inline const char* kTextureSet_Race = "Dynamic Race Resources";
 inline const char* kTextureSet_CharacterSelect = "Character Select Icon Resources";
 
 class SiffLoadSet;
@@ -49,6 +49,8 @@ public:
     inline int GetName() const { return Name; }
     void Enable();
     void Disable();
+
+    inline const std::vector<SlStringT<char>>& GetFiles() const { return Files; }
 private:
     int Name;
     std::vector<SlStringT<char>> Files;
@@ -67,6 +69,8 @@ public:
     void MakeTextureSet(const char* name, const std::vector<SlStringT<char>>& files);
     void DestroyTextureSet(const char* name);
     SlGlobalTextureSet* GetTextureSet(const char* name);
+    bool OverrideTexture(int& texture, SiffLoadSet*& siff);
+
     inline const std::vector<SlGlobalTextureSet*>& GetTextureSets() { return TextureSets; }
     void SetupRacerTextureSets();
 public:

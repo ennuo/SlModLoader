@@ -124,7 +124,7 @@ public:
     virtual void UnregisterTexturePack();
     virtual void SetTexture();
     virtual void GetTexture();
-    virtual void GetTexture1();
+    virtual void* GetTexture1(int);
     virtual void UnregisterTextureData();
     virtual void RegisterTextureData();
 private:
