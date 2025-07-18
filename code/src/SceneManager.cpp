@@ -118,22 +118,3 @@ void SceneManager::SetNewTexture(const SlStringT<char>& resource, int texture, c
 
     SetNewTexture(Hash(buf), texture, *siff);
 }
-
-void SceneManager::SetRacerIconTexture(int object, int buf, int scene)
-{
-    // stupid hack
-    const int kHash_RandomIcon = Hash("Random_IconSmall.tga");
-    if (buf == kHash_RandomIcon)
-    {
-        SetNewTexture(object, kHash_RandomIcon, scene);
-        return;
-    }
-
-    RacerInfo* info = (RacerInfo*)buf;
-    if (info->IsMod())
-    {
-        SlCustomRacer* racer = info->GetCustomRacer();
-        SetNewTexture(racer->FrontendResources, info->CharSelectIconHash, object);
-    }
-    else SetNewTexture(object, info->CharSelectIconHash);
-}

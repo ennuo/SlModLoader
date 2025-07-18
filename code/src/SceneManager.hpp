@@ -93,8 +93,6 @@ private:
     DEFINE_MEMBER_FN_2(HideObjectInternal, void, 0x00493b60, int object, bool b);
     DEFINE_MEMBER_FN_2(ShowObjectInternal, void, 0x00493b10, int object, bool b);
 public:
-    void SetRacerIconTexture(int object, int buf, int scene);
-public:
     void SetNewTexture(int texture, const char* object, ...);
     void SetNewTexture(const char* texture, int hash);
     void SetNewTexture(const char* texture, const char* object, ...);

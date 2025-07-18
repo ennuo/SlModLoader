@@ -285,10 +285,7 @@ void Network_InstallHooks()
 
     uint8_t PUSH_EAX = 0x50;
     uint8_t PUSH_EBP = 0x55;
-    intptr_t SM_SET_ICON_FN = GetFnAddr(&SceneManager::SetRacerIconTexture) - ASLR(0x008428f6);
 
     PatchExecutableSection((void*)ASLR(0x0065cf3c), &PUSH_EAX, sizeof(PUSH_EAX));
     PatchExecutableSection((void*)ASLR(0x008503cb), &PUSH_EBP, sizeof(PUSH_EBP));
-    PatchExecutableSection((void*)ASLR(0x008428f2), &SM_SET_ICON_FN, sizeof(SM_SET_ICON_FN));
-    PatchExecutableSection((void*)ASLR(0x0084272c), &PUSH_EBP, sizeof(PUSH_EBP));
 }
