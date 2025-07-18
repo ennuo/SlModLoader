@@ -1123,14 +1123,12 @@ bool SlModManager::OverrideTexture(int& texture, SiffLoadSet*& siff)
         for (const auto& file : set->GetFiles())
         {
             SiffLoadSet** handle = (SiffLoadSet**)gResourceManager->GetResource(file);
-            if (siff == nullptr) continue;
-            SiffLoadSet* ssiff = *handle;
-            if (ssiff == nullptr) continue;
+            if (handle == nullptr || *handle == nullptr) continue;
 
-            if (ssiff->m_TextureManager.GetTexture1(texture) != nullptr)
+            if ((*handle)->m_TextureManager.GetTexture1(texture) != nullptr)
             {
                 // LOG("- Overwriting %08x with load set %s", texture, file.m_Data);
-                siff = ssiff;
+                siff = *handle;
                 return true;
             }
         }
